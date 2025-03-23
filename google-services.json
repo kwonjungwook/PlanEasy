@@ -1,0 +1,63 @@
+{
+  "project_info": {
+    "project_number": "68267517120",
+    "project_id": "planeasy-74132",
+    "storage_bucket": "planeasy-74132.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:68267517120:android:0d16d29b2fd71961c2f925",
+        "android_client_info": {
+          "package_name": "com.kwonjihoo.PlanEasy"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "68267517120-8rfal2ij98ilh5ethcd9mkc1v5tiolac.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.kwonjihoo.PlanEasy",
+            "certificate_hash": "b4c6b4aaf47208e134a3c4dc8a2df18dbd58f4a4"
+          }
+        },
+        {
+          "client_id": "68267517120-9rnvu2m2ksk30u1lov5su28ddctnvr84.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.kwonjihoo.PlanEasy",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "68267517120-ot6td6kbvpfp9sjojpi3m2h7jlghp586.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.kwonjihoo.PlanEasy",
+            "certificate_hash": "91d073ff3d209c4b581c545c72292ef571e485fb"
+          }
+        },
+        {
+          "client_id": "68267517120-big8fa3f9h6aefq5so2viadcath3jbt4.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAHv_VD53KX70FCUNczan9icQWJ1rjYyeg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "68267517120-big8fa3f9h6aefq5so2viadcath3jbt4.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
