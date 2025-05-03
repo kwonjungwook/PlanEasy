@@ -507,97 +507,130 @@ const styles = StyleSheet.create({
     color: "#495057",
   },
 
- // DailyStyle.js에 다음 토스트 스타일로 교체하세요
+  // DailyStyle.js에 다음 토스트 스타일로 교체하세요
 
-// 토스트 스타일
-toastContainer: {
-  position: "absolute",
-  bottom: 80,
-  left: 20,
-  right: 20,
-  zIndex: 9999,
-},
-toast: {
-  position: "relative",
-  borderRadius: 12,
-  marginBottom: 8,
-  height: 40, // 높이 명시적 지정
-  overflow: "hidden", // 내용이 넘치지 않도록 설정
-  ...Platform.select({
-    ios: {
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.2,
-      shadowRadius: 3,
-    },
-    android: {
-      elevation: 3,
-    },
-  }),
-},
-toastOverlay: {
-  position: "absolute",
-  top: 0,
-  left: 0,
-  right: 0,
-  bottom: 0,
-  borderRadius: 12,
-  zIndex: 1,
-},
-toastContent: {
-  position: "absolute", // 절대 위치로 변경
-  top: 0,
-  left: 0,
-  right: 0,
-  bottom: 0,
-  flexDirection: "row",
-  alignItems: "center",
-  paddingHorizontal: 12,
-  zIndex: 2,
-},
-toastText: {
-  fontSize: 14,
-  color: "#fff",
-  fontWeight: "600",
-  flex: 1,
-},
-toastIcon: {
-  fontSize: 16,
-  color: "#fff",
-  marginRight: 8,
-},
+  // 토스트 스타일
+  toastContainer: {
+    position: "absolute",
+    bottom: 80,
+    left: 20,
+    right: 20,
+    zIndex: 9999,
+  },
+  toast: {
+    position: "relative",
+    borderRadius: 12,
+    marginBottom: 8,
+    height: 40, // 높이 명시적 지정
+    overflow: "hidden", // 내용이 넘치지 않도록 설정
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 3,
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
+  },
+  toastOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 12,
+    zIndex: 1,
+  },
+  toastContent: {
+    position: "absolute", // 절대 위치로 변경
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    zIndex: 2,
+  },
+  toastText: {
+    fontSize: 14,
+    color: "#fff",
+    fontWeight: "600",
+    flex: 1,
+  },
+  toastIcon: {
+    fontSize: 16,
+    color: "#fff",
+    marginRight: 8,
+  },
 
-// 토스트 타입별 배경색 - 완전 불투명하게 변경
-successToast: {
-  backgroundColor: "rgb(80, 206, 187)",
-},
-warningToast: {
-  backgroundColor: "rgb(255, 184, 77)",
-},
-errorToast: {
-  backgroundColor: "rgb(239, 83, 80)",
-},
-infoToast: {
-  backgroundColor: "rgb(66, 165, 245)",
-},
-rewardToast: {
-  backgroundColor: "rgb(156, 39, 176)",
-},
-levelUpToast: {
-  backgroundColor: "rgb(251, 192, 45)",
-},
-pointToast: {
-  backgroundColor: "rgb(139, 195, 74)",
-},
+  // 토스트 타입별 배경색 - 완전 불투명하게 변경
+  successToast: {
+    backgroundColor: "rgb(80, 206, 187)",
+  },
+  warningToast: {
+    backgroundColor: "rgb(255, 184, 77)",
+  },
+  errorToast: {
+    backgroundColor: "rgb(239, 83, 80)",
+  },
+  infoToast: {
+    backgroundColor: "rgb(66, 165, 245)",
+  },
+  rewardToast: {
+    backgroundColor: "rgb(156, 39, 176)",
+  },
+  levelUpToast: {
+    backgroundColor: "rgb(251, 192, 45)",
+  },
+  pointToast: {
+    backgroundColor: "rgb(139, 195, 74)",
+  },
 
-// 전역 토스트 컨테이너
-globalToastContainer: {
-  position: "absolute",
-  bottom: 80,
-  left: 20,
-  right: 20,
-  zIndex: 9999,
-},
+  // 전역 토스트 컨테이너
+  globalToastContainer: {
+    position: "absolute",
+    bottom: 80,
+    left: 20,
+    right: 20,
+    zIndex: 9999,
+  },
+
+  slotInfoText: {
+    fontSize: 12,
+    color: "#FF9500",
+    fontWeight: "normal",
+  },
+  addGoalButtonTextSpecial: {
+    color: "#FF9500", // 주황색으로 가격 강조
+    fontWeight: "bold",
+  },
+
+  subscribedBadge: {
+    backgroundColor: "#FFB74D", // 프리미엄 느낌의 주황색/골드 계열
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginLeft: 8,
+    borderWidth: 1,
+    borderColor: "#FF9800",
+    shadowColor: "#FF9800",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.4,
+    shadowRadius: 2,
+    elevation: 3,
+  },
+  subscribedText: {
+    color: "#FFFFFF",
+    fontSize: 10,
+    fontWeight: "bold",
+    textShadowColor: "rgba(0, 0, 0, 0.3)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 1,
+  },
 });
 
 export default styles;

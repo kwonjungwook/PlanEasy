@@ -18,7 +18,7 @@ import {
   initFeedbackService,
   updateReportScheduling,
   setReportCallback, // 새 함수 import
-} from "../services/FeedbackService";
+} from "../services/ImprovedFeedbackService";
 
 // PlannerContext 생성
 const PlannerContext = createContext();
@@ -71,7 +71,6 @@ export function PlannerProvider({ children }) {
   const [isPremiumUser, setIsPremiumUser] = useState(false);
   const [loading, setLoading] = useState(false);
   const [goalTargets, setGoalTargets] = useState([]);
-  
 
   useEffect(() => {
     // 앱 시작 시 데이터 로드
@@ -94,10 +93,10 @@ export function PlannerProvider({ children }) {
         JSON.stringify(updatedGoals)
       );
       console.log("목표 추가 완료:", newGoal.title);
-      
+
       // 이벤트 발생 - ProgressContext에서 이 이벤트를 구독함
-      eventBus.emit('goalAdded', { goalId: newGoal.id });
-      
+      eventBus.emit("goalAdded", { goalId: newGoal.id });
+
       return true;
     } catch (error) {
       console.error("목표 추가 오류:", error);
@@ -201,20 +200,11 @@ export function PlannerProvider({ children }) {
     // 피드백 서비스 초기화
     initFeedbackService({ isPremiumUser });
 
-    // 리포트 콜백 등록
-    setReportCallback((date, reportType) => {
-      // 리포트 생성에 필요한 데이터 전달
-      return generateFeedback(
-        date,
-        reportType,
-        schedules,
-        tasks,
-        studySessions,
-        reportType === "weekly" ? weeklyStats : monthlyStats,
-        true,
-        isPremiumUser,
-        goalTargets
-      );
+    // 리포트 콜백 등록 - 무한 재귀 방지
+    // 주의: 이 콜백은 더 이상 사용되지 않으므로, 빈 함수로 대체
+    setReportCallback(() => {
+      // 데이터 반환 대신 null 반환
+      return null;
     });
 
     // 프리미엄 사용자 자동 리포트 스케줄링 설정
@@ -1054,7 +1044,6 @@ export function PlannerProvider({ children }) {
     }
   };
 
-  // AI 피드백 생성 함수 - 리팩토링된 FeedbackService 사용, 목표 데이터 전달하도록 수정
   const generateAIFeedback = async (
     date,
     reportType = "daily",

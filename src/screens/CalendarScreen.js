@@ -1,3 +1,4 @@
+// src/screens/CalendarScreen.js
 import React, { useState, useEffect, useRef } from "react";
 import {
   View,
@@ -67,11 +68,9 @@ const THEME = {
 };
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get("window");
-const INITIAL_SCHEDULE_HEIGHT = SCREEN_HEIGHT * 0.45; // 화면 높이의 45%로 설정
-const MAX_SCHEDULE_HEIGHT = SCREEN_HEIGHT * 0.9; // 일정 영역의 최대 높이 (화면의 90%로 확장)
 
 export default function CalendarScreen() {
-  // 1. 기본 상태 변수
+  // ===== 1. 상태 변수 및 Hooks =====
   const navigation = useNavigation();
   const route = useRoute();
   const {
@@ -85,123 +84,126 @@ export default function CalendarScreen() {
     customSchedules,
   } = usePlanner();
 
+  // 달력 관련 상태
   const [selectedDates, setSelectedDates] = useState({});
   const [currentDate, setCurrentDate] = useState(
     format(new Date(), "yyyy-MM-dd")
   );
   const [showSchedules, setShowSchedules] = useState(true);
   const [isSelecting, setIsSelecting] = useState(false);
-  const [calendarHeight, setCalendarHeight] = useState(0);
+
+  // 레이아웃 관련 상태
   const [isExpanded, setIsExpanded] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [layoutMode, setLayoutMode] = useState("normal"); // 'normal' 또는 'expanded'
 
-  // 추가: 일정 선택 관련 상태 변수들
+  // 애니메이션 값
+  const dragColorAnim = useRef(new Animated.Value(0)).current;
+  const expandRatioAnim = useRef(new Animated.Value(0)).current;
+
+  // 스크롤 참조
+  const scrollRef = useRef(null);
+  const calendarContainerRef = useRef(null);
+
+  // 일정 선택 관련 상태
   const [selectedSchedules, setSelectedSchedules] = useState([]);
 
-  // 2. 모달 관련 상태 및 애니메이션 변수
+  // 모달 관련 상태
   const [modalState, setModalState] = useState({
-    visible: false, // 모달 표시 여부
-    type: null, // 모달 타입 (main, day, custom)
-    transitioning: false, // 전환 중 여부
-    content: null, // 현재 콘텐츠 (필요시 사용)
+    visible: false,
+    type: null,
+    transitioning: false,
+    content: null,
   });
 
   const modalFadeAnim = useRef(new Animated.Value(0)).current;
   const modalTranslateY = useRef(new Animated.Value(20)).current;
 
-  // 드래그 관련 애니메이션 변수
-  const scheduleHeightAnim = useRef(
-    new Animated.Value(INITIAL_SCHEDULE_HEIGHT)
-  ).current;
-  const dragColorAnim = useRef(new Animated.Value(0)).current;
-  const scrollRef = useRef(null);
-
-  // 컬러 보간 설정
+  // 색상 보간 설정
   const backgroundColor = dragColorAnim.interpolate({
     inputRange: [0, 1],
     outputRange: ["rgba(251, 253, 255, 1)", "rgba(255, 255, 255, 1)"],
   });
+
   const handleColor = dragColorAnim.interpolate({
     inputRange: [0, 1],
     outputRange: [THEME_COLORS.gray, THEME_COLORS.primary],
   });
 
-  useEffect(() => {
-    // 컴포넌트 마운트 시 스크롤 참조 설정 확인
-    console.log("캘린더 스크린 마운트됨, 스크롤 참조 설정");
+  // 확장 비율 보간 설정
+  const calendarFlexValue = expandRatioAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.51, 0.05],
+  });
 
-    // 스크롤 참조가 제대로 연결되었는지 디버깅
+  const scheduleFlexValue = expandRatioAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.49, 0.95],
+  });
+
+  // ===== 2. useEffect 및 이벤트 핸들러 =====
+
+  // 컴포넌트 마운트 시 초기화
+  useEffect(() => {
+    console.log("캘린더 스크린 마운트됨");
     return () => {
       console.log("캘린더 스크린 언마운트됨");
     };
   }, []);
 
-  // 2. 컴포넌트 내부에 useEffect 추가 (기존 useEffect 아래 추가)
+  // 뒤로가기 버튼 핸들러
   useEffect(() => {
-    // 뒤로가기 버튼 핸들러 함수
     const handleBackPress = () => {
-      // 다중 선택 모드일 때는 선택 취소로 처리
       if (isSelecting) {
         setIsSelecting(false);
         setSelectedDates({});
-        return true; // 이벤트 소비 (홈으로 가지 않음)
+        return true;
       }
-      // 기본 동작 (홈으로 이동)
       return false;
     };
 
-    // 백 핸들러 등록
     BackHandler.addEventListener("hardwareBackPress", handleBackPress);
-
-    // 컴포넌트 언마운트 시 이벤트 리스너 제거
     return () => {
       BackHandler.removeEventListener("hardwareBackPress", handleBackPress);
     };
-  }, [isSelecting]); // isSelecting 상태가 변경될 때마다 재실행
+  }, [isSelecting]);
 
-  // 화면 포커스 효과: 일정 편집 후 돌아왔을 때 상태 업데이트
+  // 화면 포커스 효과
   useFocusEffect(
     React.useCallback(() => {
-      // 일정 편집 화면에서 돌아왔을 때 일정 컨테이너가 보이도록 설정
       setShowSchedules(true);
-
-      // 선택 모드 초기화
       setSelectedSchedules([]);
 
-      // 편집 후 돌아왔을 때는 축소된 상태로 보여주기
-      if (!isExpanded) {
+      if (isExpanded) {
         collapseSchedule();
       }
 
       return () => {
-        // 화면에서 나갈 때 정리 작업
+        // 정리 작업
       };
     }, [])
   );
 
-  // 2. 변경사항: 다중 선택 모드에서 오늘 날짜 체크 문제 수정
+  // 날짜 선택 모드 토글
   const toggleSelectionMode = () => {
     if (!isSelecting) {
-      // 다중 선택 모드 활성화 - 모든 선택 초기화
       setIsSelecting(true);
-      setSelectedDates({}); // 빈 객체로 초기화하여 아무 날짜도 선택되지 않도록 함
+      setSelectedDates({});
     } else {
-      // 다중 선택 모드 비활성화
       setIsSelecting(false);
       setSelectedDates({});
     }
   };
 
-  // 3. 모달 제어 함수
+  // ===== 3. 모달 제어 함수 =====
+
   const showModal = (type = "main", content = null) => {
-    // 모달이 이미 표시 중이면 콘텐츠 전환
     if (modalState.visible) {
       setModalState((prev) => ({
         ...prev,
         transitioning: true,
       }));
 
-      // 페이드 아웃
       Animated.parallel([
         Animated.timing(modalFadeAnim, {
           toValue: 0,
@@ -214,7 +216,6 @@ export default function CalendarScreen() {
           useNativeDriver: true,
         }),
       ]).start(() => {
-        // 타입 변경 후 페이드 인
         setModalState({
           visible: true,
           type,
@@ -222,12 +223,9 @@ export default function CalendarScreen() {
           content,
         });
 
-        // 페이드 인
         startModalAnimation();
       });
-    }
-    // 모달이 닫혀있으면 새로 표시
-    else {
+    } else {
       setModalState({
         visible: true,
         type,
@@ -235,7 +233,6 @@ export default function CalendarScreen() {
         content,
       });
 
-      // 페이드 인
       startModalAnimation();
     }
   };
@@ -248,7 +245,6 @@ export default function CalendarScreen() {
       transitioning: true,
     }));
 
-    // 페이드 아웃
     Animated.parallel([
       Animated.timing(modalFadeAnim, {
         toValue: 0,
@@ -261,7 +257,6 @@ export default function CalendarScreen() {
         useNativeDriver: true,
       }),
     ]).start(() => {
-      // 모달 상태 초기화
       setModalState({
         visible: false,
         type: null,
@@ -271,12 +266,10 @@ export default function CalendarScreen() {
     });
   };
 
-  // 애니메이션 시작 함수
   const startModalAnimation = () => {
     modalFadeAnim.setValue(0);
     modalTranslateY.setValue(20);
 
-    // 페이드 인 및 슬라이드 업
     Animated.parallel([
       Animated.timing(modalFadeAnim, {
         toValue: 1,
@@ -291,127 +284,124 @@ export default function CalendarScreen() {
     ]).start();
   };
 
+  // ===== 4. 일정 확장/축소 함수 =====
+
   const expandSchedule = () => {
-    // 드래그 중 상태를 false로 설정하여 스크롤이 작동하도록 함
     setIsDragging(false);
+    setLayoutMode("expanded");
 
     Animated.parallel([
-      Animated.spring(scheduleHeightAnim, {
-        toValue: MAX_SCHEDULE_HEIGHT,
+      Animated.timing(expandRatioAnim, {
+        toValue: 1,
+        duration: 300,
         useNativeDriver: false,
-        friction: 8,
-        tension: 40,
-        velocity: 0.6,
       }),
       Animated.timing(dragColorAnim, {
         toValue: 1,
-        duration: 150,
+        duration: 300,
         useNativeDriver: false,
       }),
     ]).start(() => {
       setIsExpanded(true);
 
-      // 스크롤을 맨 위로 올리기 위한 안전한 방법
+      // 스크롤 초기화
       setTimeout(() => {
-        if (scrollRef.current && schedules[currentDate]?.length > 0) {
-          try {
-            // FlatList의 경우 scrollToOffset 사용
-            scrollRef.current.scrollToOffset({ offset: 0, animated: true });
-            console.log("일정 창 확장 완료, 스크롤 초기화됨");
-          } catch (error) {
-            console.log("스크롤 조작 중 오류 발생:", error);
+        try {
+          if (scrollRef.current) {
+            scrollRef.current.scrollToOffset({ offset: 0, animated: false });
           }
-        } else {
-          console.log("일정 창 확장 완료");
+        } catch (error) {
+          console.log("스크롤 초기화 오류:", error);
         }
-      }, 300); // 약간의 지연을 줘서 애니메이션 완료 후 스크롤 실행
+      }, 100);
     });
   };
 
-  // 4. collapseSchedule 함수 수정 - 함수 전체 교체
   const collapseSchedule = () => {
+    setIsDragging(false);
+    setLayoutMode("normal");
+
     Animated.parallel([
-      Animated.spring(scheduleHeightAnim, {
-        toValue: INITIAL_SCHEDULE_HEIGHT,
+      Animated.timing(expandRatioAnim, {
+        toValue: 0,
+        duration: 300,
         useNativeDriver: false,
-        friction: 8,
-        tension: 40,
-        velocity: -0.6,
       }),
       Animated.timing(dragColorAnim, {
         toValue: 0,
-        duration: 150,
+        duration: 300,
         useNativeDriver: false,
       }),
     ]).start(() => {
       setIsExpanded(false);
-      console.log("일정 창 축소 완료");
+
+      // 스크롤 초기화
+      setTimeout(() => {
+        try {
+          if (scrollRef.current) {
+            scrollRef.current.scrollToOffset({ offset: 0, animated: false });
+          }
+        } catch (error) {
+          console.log("스크롤 초기화 오류:", error);
+        }
+      }, 100);
     });
   };
+
+  // ===== 5. PanResponder 설정 =====
 
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: (evt, gestureState) => {
-        // 드래그 핸들 영역에서만 PanResponder 활성화
         const y = evt.nativeEvent.locationY;
         return y < 50;
       },
       onMoveShouldSetPanResponder: (evt, gestureState) => {
-        // y축 방향으로 충분한 움직임이 있을 때만 PanResponder 활성화
         return Math.abs(gestureState.dy) > 3;
       },
       onPanResponderGrant: () => {
-        scheduleHeightAnim.setOffset(scheduleHeightAnim._value);
         setIsDragging(true);
-
-        // setNativeProps 대신 상태 변수 사용
-        // scrollRef.current 직접 조작하지 않음
       },
       onPanResponderMove: (e, gestureState) => {
-        const newHeight = scheduleHeightAnim._offset + gestureState.dy * -1;
+        // 드래그 방향에 따라 확장/축소 상태 계산
+        const ratio = isExpanded
+          ? Math.max(0, Math.min(1, 1 + gestureState.dy / 200))
+          : Math.max(0, Math.min(1, -gestureState.dy / 200));
 
-        if (
-          newHeight >= INITIAL_SCHEDULE_HEIGHT - 30 &&
-          newHeight <= MAX_SCHEDULE_HEIGHT + 30
-        ) {
-          const clampedHeight = Math.max(
-            INITIAL_SCHEDULE_HEIGHT,
-            Math.min(MAX_SCHEDULE_HEIGHT, newHeight)
-          );
-          scheduleHeightAnim.setValue(gestureState.dy * -1);
-
-          const colorProgress =
-            (clampedHeight - INITIAL_SCHEDULE_HEIGHT) /
-            (MAX_SCHEDULE_HEIGHT - INITIAL_SCHEDULE_HEIGHT);
-          dragColorAnim.setValue(Math.max(0, Math.min(1, colorProgress)));
-        }
+        expandRatioAnim.setValue(ratio);
+        dragColorAnim.setValue(ratio);
       },
       onPanResponderRelease: (e, gestureState) => {
-        scheduleHeightAnim.flattenOffset();
         setIsDragging(false);
 
-        const newHeight = scheduleHeightAnim._value;
-        const middlePoint = (INITIAL_SCHEDULE_HEIGHT + MAX_SCHEDULE_HEIGHT) / 2;
         const VELOCITY_THRESHOLD = 0.5;
 
-        if (gestureState.vy > VELOCITY_THRESHOLD) {
-          collapseSchedule();
-        } else if (gestureState.vy < -VELOCITY_THRESHOLD) {
+        // 위로 빠르게 스와이프 = 확장
+        if (gestureState.vy < -VELOCITY_THRESHOLD) {
           expandSchedule();
-        } else if (newHeight > middlePoint) {
-          expandSchedule();
-        } else {
+        }
+        // 아래로 빠르게 스와이프 = 축소
+        else if (gestureState.vy > VELOCITY_THRESHOLD) {
           collapseSchedule();
+        }
+        // 중간 지점 이상 드래그 = 토글
+        else {
+          const currentValue = expandRatioAnim._value;
+          if (currentValue > 0.5) {
+            expandSchedule();
+          } else {
+            collapseSchedule();
+          }
         }
       },
       onPanResponderTerminate: () => {
-        // 드래그가 취소되었을 때도 setIsDragging(false) 호출
         setIsDragging(false);
       },
     })
   ).current;
 
-  // 6. 이벤트 핸들러
+  // ===== 6. 이벤트 핸들러 =====
+
   const handleDayPress = (day) => {
     if (isSelecting) {
       const updatedSelection = { ...selectedDates };
@@ -428,21 +418,13 @@ export default function CalendarScreen() {
       setCurrentDate(day.dateString);
       setShowSchedules(true);
       setSelectedDates({});
-      // 선택 모드 초기화
       setSelectedSchedules([]);
-      collapseSchedule();
+      if (isExpanded) {
+        collapseSchedule();
+      }
     }
   };
 
-  const handleTabPress = () => {
-    if (isExpanded) {
-      collapseSchedule();
-    } else {
-      expandSchedule();
-    }
-  };
-
-  // 일정 관리 핸들러 - 향상된 옵션
   const handleManageSchedule = () => {
     Alert.alert(
       "일정 관리",
@@ -494,50 +476,8 @@ export default function CalendarScreen() {
     );
   };
 
-  // 추가: 일정 항목 선택 처리
-  const handleScheduleSelection = (scheduleId) => {
-    setSelectedSchedules((prevSelected) => {
-      if (prevSelected.includes(scheduleId)) {
-        return prevSelected.filter((id) => id !== scheduleId);
-      } else {
-        return [...prevSelected, scheduleId];
-      }
-    });
-  };
+  // ===== 7. 유틸리티 함수 =====
 
-  // 추가: 선택된 일정 삭제
-  const handleDeleteSelectedSchedules = async () => {
-    if (selectedSchedules.length === 0) {
-      Alert.alert("알림", "삭제할 일정을 선택해주세요.");
-      return;
-    }
-
-    Alert.alert(
-      "일정 삭제",
-      `선택한 ${selectedSchedules.length}개의 일정을 삭제하시겠습니까?`,
-      [
-        { text: "취소", style: "cancel" },
-        {
-          text: "삭제",
-          style: "destructive",
-          onPress: async () => {
-            const currentScheduleList = schedules[currentDate] || [];
-            const filteredSchedules = currentScheduleList.filter(
-              (schedule) => !selectedSchedules.includes(schedule.id)
-            );
-
-            await updateSchedule(currentDate, filteredSchedules);
-            setSelectedSchedules([]);
-            setIsScheduleSelecting(false);
-
-            Alert.alert("완료", "선택한 일정이 삭제되었습니다.");
-          },
-        },
-      ]
-    );
-  };
-
-  // 7. 유틸리티 함수들
   const getMarkedDates = () => {
     const markedDates = {};
 
@@ -570,15 +510,10 @@ export default function CalendarScreen() {
     return markedDates;
   };
 
-  const onCalendarLayout = (event) => {
-    const { height } = event.nativeEvent.layout;
-    setCalendarHeight(height);
-  };
+  // ===== 8. 일정 적용 함수 =====
 
-  // 8. 일정 적용 함수
   const applySchedule = async (isWeekday, dayKey, customSchedule) => {
     try {
-      // 모달 닫기
       hideModal();
 
       const dates = Object.keys(selectedDates);
@@ -671,10 +606,31 @@ export default function CalendarScreen() {
     }
   };
 
+  // ===== 9. 렌더링 함수 =====
+
+  const renderEmptyCalendarIcon = () => {
+    const date = new Date(currentDate);
+    const month = date
+      .toLocaleString("default", { month: "short" })
+      .toUpperCase();
+    const day = date.getDate();
+
+    return (
+      <View style={styles.calendarIconContainer}>
+        <View style={styles.calendarIconHeader}>
+          <Text style={styles.calendarIconMonth}>{month}</Text>
+        </View>
+        <View style={styles.calendarIconBody}>
+          <Text style={styles.calendarIconDay}>{day}</Text>
+        </View>
+      </View>
+    );
+  };
+
   const renderSchedules = () => {
     if (!currentDate || !showSchedules) return null;
 
-    // 일정 데이터 정의
+    // 일정 데이터 정렬
     const daySchedules = schedules[currentDate]
       ? [...schedules[currentDate]].sort((a, b) => {
           const timeA = a.startTime.split(":").map(Number);
@@ -684,21 +640,8 @@ export default function CalendarScreen() {
       : [];
 
     return (
-      <Animated.View
-        style={[
-          styles.scheduleContainer,
-          {
-            height: scheduleHeightAnim,
-            backgroundColor: backgroundColor,
-            bottom: 0,
-            position: "absolute",
-            left: 0,
-            right: 0,
-            zIndex: 20,
-          },
-        ]}
-      >
-        {/* 드래그 핸들 영역 - PanResponder는 이 영역에만 적용 */}
+      <>
+        {/* 드래그 핸들 영역 */}
         <Animated.View
           style={[
             styles.dragHandleArea,
@@ -716,10 +659,17 @@ export default function CalendarScreen() {
           />
         </Animated.View>
 
+        {/* 일정 헤더 */}
         <View style={styles.scheduleHeader}>
           <TouchableOpacity
             style={styles.expandTouchArea}
-            onPress={handleTabPress}
+            onPress={() => {
+              if (isExpanded) {
+                collapseSchedule();
+              } else {
+                expandSchedule();
+              }
+            }}
             activeOpacity={0.7}
           >
             <View style={styles.scheduleHeaderContent}>
@@ -754,7 +704,7 @@ export default function CalendarScreen() {
           )}
         </View>
 
-        {/* FlatList로 변경하여 일정 목록 표시 */}
+        {/* 일정 목록 */}
         <View style={{ flex: 1 }}>
           {daySchedules.length > 0 ? (
             <FlatList
@@ -793,27 +743,17 @@ export default function CalendarScreen() {
               }}
               style={{ flex: 1 }}
               showsVerticalScrollIndicator={true}
-              scrollEnabled={true} // 항상 스크롤 활성화
+              scrollEnabled={true}
               ListFooterComponent={() => <View style={{ height: 100 }} />}
             />
           ) : (
             <View style={styles.emptyContainer}>
-              <Text style={styles.emptyIcon}>📅</Text>
+              {renderEmptyCalendarIcon()}
               <Text style={styles.noScheduleText}>등록된 일정이 없습니다.</Text>
-              <Text style={styles.noScheduleSubText}>
-                새로운 일정을 추가해보세요!
-              </Text>
-
-              <TouchableOpacity
-                style={styles.emptyAddButton}
-                onPress={() => showModal("main")}
-              >
-                <Text style={styles.emptyAddButtonText}>일정 추가하기</Text>
-              </TouchableOpacity>
             </View>
           )}
         </View>
-      </Animated.View>
+      </>
     );
   };
 
@@ -928,7 +868,7 @@ export default function CalendarScreen() {
               </Text>
             </View>
 
-            <ScrollView style={{ maxHeight: SCREEN_HEIGHT * 0.4 }}>
+            <ScrollView style={{ maxHeight: SCREEN_HEIGHT * 0.51 }}>
               {days.map((day) => {
                 const hasSchedules = dailySchedules[day.key]?.length > 0;
                 return (
@@ -1003,7 +943,7 @@ export default function CalendarScreen() {
               </Text>
             </View>
 
-            <ScrollView style={{ maxHeight: SCREEN_HEIGHT * 0.5 }}>
+            <ScrollView style={{ maxHeight: SCREEN_HEIGHT * 0.51 }}>
               {customSchedules && customSchedules.length > 0 ? (
                 customSchedules.map((schedule) => (
                   <TouchableOpacity
@@ -1087,11 +1027,11 @@ export default function CalendarScreen() {
     }
   };
 
-  // 10. 최종 렌더링
+  // ===== 10. 메인 렌더링 =====
+
   return (
     <View style={styles.container}>
       {/* 상단 헤더 영역 */}
-     
       <View style={styles.header}>
         {/* 좌측에 헤더 제목 */}
         <Text style={styles.headerTitle}>캘린더</Text>
@@ -1179,76 +1119,100 @@ export default function CalendarScreen() {
         </View>
       </View>
 
-      <View style={styles.calendarContainer} onLayout={onCalendarLayout}>
-        <Calendar
-          style={styles.calendar}
-          theme={THEME}
-          firstDay={1}
-          hideExtraDays={true}
-          markedDates={getMarkedDates()}
-          onDayPress={handleDayPress}
-          enableSwipeMonths={true}
-          monthFormat={"yyyy년 MM월"}
-          dayComponent={({ date, state, marking }) => {
-            if (state === "disabled") return <View />;
+      {/* 새로운 flex 레이아웃 사용 */}
+      <View style={{ flex: 1 }}>
+        {/* 달력 영역 - 애니메이션 처리된 flex 값 사용 */}
+        <Animated.View
+          ref={calendarContainerRef}
+          style={[styles.calendarContainer, { flex: calendarFlexValue }]}
+        >
+          <Calendar
+            style={styles.calendar}
+            theme={THEME}
+            firstDay={1}
+            hideExtraDays={true}
+            markedDates={getMarkedDates()}
+            onDayPress={handleDayPress}
+            enableSwipeMonths={true}
+            monthFormat={"yyyy년 MM월"}
+            onMonthChange={(month) => {
+              console.log("달력 월 변경:", month.dateString);
+            }}
+            dayComponent={({ date, state, marking }) => {
+              if (state === "disabled") return <View />;
 
-            const dayDate = new Date(date.timestamp);
-            const dayOfWeek = dayDate.getDay();
-            const holidayName = getHolidayName(date.dateString);
+              const dayDate = new Date(date.timestamp);
+              const dayOfWeek = dayDate.getDay();
+              const holidayName = getHolidayName(date.dateString);
 
-            const textStyle = [
-              styles.dayText,
-              (dayOfWeek === 0 || holidayName) && { color: "#f44336" },
-              dayOfWeek === 6 && { color: "#9C27B0" },
-              marking?.selected && { color: "white" },
-            ];
+              const textStyle = [
+                styles.dayText,
+                (dayOfWeek === 0 || holidayName) && { color: "#f44336" },
+                dayOfWeek === 6 && { color: "#9C27B0" },
+                marking?.selected && { color: "white" },
+              ];
 
-            return (
-              <TouchableOpacity
-                onPress={() => handleDayPress({ dateString: date.dateString })}
-                style={[
-                  styles.dayContainer,
-                  marking?.selected && {
-                    backgroundColor: THEME_COLORS.primary,
-                    borderRadius: 16,
-                  },
-                ]}
-              >
-                <Text style={textStyle}>{date.day}</Text>
-                {holidayName && (
-                  <Text
-                    style={[
-                      styles.holidayText,
-                      { color: marking?.selected ? "white" : "#f44336" },
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {holidayName}
-                  </Text>
-                )}
-                {marking?.marked && (
-                  <View
-                    style={{
-                      width: 4,
-                      height: 4,
-                      borderRadius: 2,
-                      backgroundColor: marking.selected
-                        ? "white"
-                        : THEME_COLORS.primary,
-                      marginTop: 1,
-                    }}
-                  />
-                )}
-              </TouchableOpacity>
-            );
-          }}
-        />
+              return (
+                <TouchableOpacity
+                  onPress={() =>
+                    handleDayPress({ dateString: date.dateString })
+                  }
+                  style={[
+                    styles.dayContainer,
+                    marking?.selected && {
+                      backgroundColor: THEME_COLORS.primary,
+                      borderRadius: 16,
+                    },
+                  ]}
+                >
+                  <Text style={textStyle}>{date.day}</Text>
+                  {holidayName && (
+                    <Text
+                      style={[
+                        styles.holidayText,
+                        { color: marking?.selected ? "white" : "#f44336" },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {holidayName}
+                    </Text>
+                  )}
+                  {marking?.marked && (
+                    <View
+                      style={{
+                        width: 4,
+                        height: 4,
+                        borderRadius: 2,
+                        backgroundColor: marking.selected
+                          ? "white"
+                          : THEME_COLORS.primary,
+                        marginTop: 1,
+                      }}
+                    />
+                  )}
+                </TouchableOpacity>
+              );
+            }}
+          />
+        </Animated.View>
+
+        {/* 일정 영역 - 애니메이션 처리된 flex 값 사용 */}
+        <Animated.View
+          style={[
+            styles.scheduleContainer,
+            {
+              flex: scheduleFlexValue,
+              backgroundColor: backgroundColor,
+              borderTopLeftRadius: 16,
+              borderTopRightRadius: 16,
+            },
+          ]}
+        >
+          {showSchedules && renderSchedules()}
+        </Animated.View>
       </View>
 
-      {/* 일정 표시 영역 */}
-      {renderSchedules()}
-
-      {/* 단일 모달 컨테이너 */}
+      {/* 모달 */}
       {modalState.visible && (
         <Modal
           visible={true}
@@ -1284,7 +1248,13 @@ export default function CalendarScreen() {
   );
 }
 
+// ===== 스타일 정의 =====
+
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#ffffff",
+  },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1312,17 +1282,87 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: THEME_COLORS.dark,
   },
-
-  // 기본 컨테이너 및 레이아웃
-  container: {
-    flex: 1,
-    backgroundColor: "#ffffff",
+  headerControls: {
+    flexDirection: "row",
+    alignItems: "center",
   },
-
+  modeButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+    backgroundColor: THEME_COLORS.light,
+    ...Platform.select({
+      ios: {
+        shadowColor: THEME_COLORS.shadow,
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 1,
+      },
+      android: {
+        elevation: 1,
+      },
+    }),
+  },
+  modeButtonActive: {
+    backgroundColor: "#fee0e0",
+  },
+  modeButtonIcon: {
+    fontSize: 14,
+    marginRight: 4,
+  },
+  modeButtonText: {
+    color: THEME_COLORS.dark,
+    fontWeight: "500",
+    fontSize: 13,
+  },
+  modeButtonTextActive: {
+    color: "#e74c3c",
+  },
+  inlineActionButtons: {
+    flexDirection: "row",
+    marginLeft: 8,
+    gap: 6,
+  },
+  actionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    ...Platform.select({
+      ios: {
+        shadowColor: THEME_COLORS.shadow,
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 1,
+      },
+      android: {
+        elevation: 1,
+      },
+    }),
+  },
+  actionButtonIcon: {
+    fontSize: 14,
+    marginRight: 4,
+  },
+  deleteActionButton: {
+    backgroundColor: "#fee0e0",
+    borderColor: "#e74c3c30",
+  },
+  applyActionButton: {
+    backgroundColor: "#e3f2fd",
+    borderColor: "#2196f330",
+  },
+  actionButtonText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: THEME_COLORS.dark,
+  },
   calendarContainer: {
-    zIndex: 1,
-    overflow: "visible",
-    paddingBottom: 10,
     backgroundColor: "#fcfcfc",
     ...Platform.select({
       ios: {
@@ -1336,47 +1376,6 @@ const styles = StyleSheet.create({
       },
     }),
   },
-
-  headerButtons: {
-    flexDirection: "row",
-    gap: 10,
-  },
-  headerButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 18,
-    borderRadius: 24,
-    alignItems: "center",
-    justifyContent: "center",
-    ...Platform.select({
-      ios: {
-        shadowColor: THEME_COLORS.shadow,
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 2,
-      },
-      android: {
-        elevation: 2,
-      },
-    }),
-  },
-  deleteButton: {
-    backgroundColor: THEME_COLORS.danger,
-  },
-  deleteButtonText: {
-    color: "#ffffff",
-    fontWeight: "600",
-    fontSize: 14,
-  },
-  applyButton: {
-    backgroundColor: THEME_COLORS.primary,
-  },
-  applyButtonText: {
-    color: "#ffffff",
-    fontWeight: "600",
-    fontSize: 14,
-  },
-
-  // 캘린더 스타일
   calendar: {
     borderBottomWidth: 0,
     paddingBottom: 10,
@@ -1400,35 +1399,28 @@ const styles = StyleSheet.create({
     marginTop: 1,
     fontWeight: "500",
   },
-
-  // 일정 컨테이너 스타일
   scheduleContainer: {
-    left: 0,
-    right: 0,
-    maxHeight: SCREEN_HEIGHT - 80,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    overflow: "hidden", // 추가: 내부 컨텐츠가 바깥으로 넘치지 않게 함
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
     ...Platform.select({
       ios: {
         shadowColor: "#000",
         shadowOffset: { width: 0, height: -4 },
-        shadowOpacity: 0.15,
-        shadowRadius: 12,
+        shadowOpacity: 0.1,
+        shadowRadius: 6,
       },
       android: {
-        elevation: 10,
+        elevation: 4,
       },
     }),
-    zIndex: 20,
   },
   dragHandleArea: {
-    height: 36,
+    height: 30,
     width: "100%",
     justifyContent: "center",
     alignItems: "center",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
     borderWidth: 1,
     borderColor: "#f1f3f5",
     borderBottomWidth: 0,
@@ -1447,8 +1439,6 @@ const styles = StyleSheet.create({
   expandTouchArea: {
     flex: 1,
   },
-
-  // 일정 헤더 스타일
   scheduleHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1523,49 +1513,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     fontSize: 14,
   },
-  headerActionButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 14,
-    ...Platform.select({
-      ios: {
-        shadowColor: THEME_COLORS.shadow,
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 2,
-      },
-      android: {
-        elevation: 2,
-      },
-    }),
-  },
-  cancelSelectionButton: {
-    backgroundColor: THEME_COLORS.light,
-  },
-  deleteSelectionButton: {
-    backgroundColor: THEME_COLORS.danger,
-  },
-  disabledActionButton: {
-    opacity: 0.6,
-  },
-  headerActionButtonText: {
-    color: "#fff",
-    fontWeight: "600",
-    fontSize: 14,
-  },
-  disabledButtonText: {
-    color: "#fff",
-  },
-
-  // 일정 목록 스타일
-  scheduleList: {
-    flex: 1,
-    width: "100%",
-  },
-  scheduleListContent: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-  },
   scheduleItemWrapper: {
     flexDirection: "row",
     alignItems: "center",
@@ -1577,7 +1524,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginBottom: 6,
     overflow: "hidden",
-    flex: 1, // 너비 확보
+    flex: 1,
     ...Platform.select({
       ios: {
         shadowColor: "#000",
@@ -1589,15 +1536,6 @@ const styles = StyleSheet.create({
         elevation: 3,
       },
     }),
-  },
-  scheduleItemSelecting: {
-    borderWidth: 1,
-    borderColor: "#e9ecef",
-  },
-  scheduleItemSelected: {
-    borderColor: THEME_COLORS.primary,
-    borderWidth: 1,
-    backgroundColor: `${THEME_COLORS.primary}10`,
   },
   scheduleIndicator: {
     width: 6,
@@ -1615,36 +1553,9 @@ const styles = StyleSheet.create({
   },
   scheduleText: {
     fontSize: 15,
-    color: "#495057",
+    color: "#515057",
     lineHeight: 20,
   },
-
-  // 체크박스 스타일
-  checkboxContainer: {
-    marginRight: 10,
-    padding: 6,
-  },
-  checkbox: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: THEME_COLORS.gray,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#fff",
-  },
-  checkboxSelected: {
-    backgroundColor: THEME_COLORS.primary,
-    borderColor: THEME_COLORS.primary,
-  },
-  checkboxCheck: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "bold",
-  },
-
-  // 빈 일정 스타일
   emptyContainer: {
     alignItems: "center",
     justifyContent: "center",
@@ -1655,12 +1566,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#e9ecef",
     borderStyle: "dashed",
-    width: "90%", // 너비 추가
-    alignSelf: "center", // 자기 자신을 중앙에 배치
-  },
-  emptyIcon: {
-    fontSize: 48,
-    marginBottom: 16,
+    width: "90%",
+    alignSelf: "center",
   },
   noScheduleText: {
     fontSize: 16,
@@ -1668,35 +1575,42 @@ const styles = StyleSheet.create({
     color: THEME_COLORS.dark,
     marginBottom: 8,
   },
-  noScheduleSubText: {
-    fontSize: 14,
-    color: THEME_COLORS.gray,
-    marginBottom: 20,
+  calendarIconContainer: {
+    width: 80,
+    height: 90,
+    borderRadius: 8,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#e9ecef",
+    marginBottom: 16,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
   },
-  emptyAddButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    backgroundColor: THEME_COLORS.primary,
-    borderRadius: 12,
-    ...Platform.select({
-      ios: {
-        shadowColor: THEME_COLORS.shadow,
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 2,
-      },
-    }),
+  calendarIconHeader: {
+    backgroundColor: "#e53935",
+    paddingVertical: 4,
+    alignItems: "center",
   },
-  emptyAddButtonText: {
-    color: "#fff",
-    fontWeight: "600",
+  calendarIconMonth: {
+    color: "white",
+    fontWeight: "bold",
     fontSize: 14,
   },
-
-  // 모달 스타일
+  calendarIconBody: {
+    backgroundColor: "white",
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 8,
+  },
+  calendarIconDay: {
+    fontSize: 32,
+    fontWeight: "bold",
+    color: "#333",
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.5)",
@@ -1747,8 +1661,6 @@ const styles = StyleSheet.create({
     color: THEME_COLORS.gray,
     textAlign: "center",
   },
-
-  // 모달 버튼 스타일
   enhancedModalButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -1818,10 +1730,8 @@ const styles = StyleSheet.create({
   cancelModalButtonText: {
     fontSize: 16,
     fontWeight: "600",
-    color: "#495057",
+    color: "#515057",
   },
-
-  // 모달 버튼 테마 스타일
   weekdayButton: {
     backgroundColor: "#4284F320",
     borderColor: "#4284F340",
@@ -1838,16 +1748,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#9C27B020",
     borderColor: "#9C27B040",
   },
-
-  // 비활성화 스타일
   disabledButton: {
     opacity: 0.7,
   },
   disabledButtonText: {
     color: "#aaaaaa",
   },
-
-  // 빈 커스텀 스타일
   emptyCustomContainer: {
     padding: 32,
     alignItems: "center",
@@ -1868,100 +1774,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#888",
     textAlign: "center",
-  },
-
-  selectionActionsContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: "#f8f9fa",
-    borderBottomWidth: 1,
-    borderBottomColor: "#e9ecef",
-    alignItems: "flex-end",
-  },
-  selectionActionButtons: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    gap: 8,
-  },
-  actionButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 14,
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    ...Platform.select({
-      ios: {
-        shadowColor: THEME_COLORS.shadow,
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.1,
-        shadowRadius: 1,
-      },
-      android: {
-        elevation: 1,
-      },
-    }),
-  },
-  actionButtonIcon: {
-    fontSize: 14,
-    marginRight: 4,
-  },
-  deleteActionButton: {
-    backgroundColor: "#fee0e0",
-    borderColor: "#e74c3c30",
-  },
-  applyActionButton: {
-    backgroundColor: "#e3f2fd",
-    borderColor: "#2196f330",
-  },
-  actionButtonText: {
-    fontSize: 13,
-    fontWeight: "500",
-    color: THEME_COLORS.dark,
-  },
-  modeButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 14,
-    backgroundColor: THEME_COLORS.light,
-    ...Platform.select({
-      ios: {
-        shadowColor: THEME_COLORS.shadow,
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.1,
-        shadowRadius: 1,
-      },
-      android: {
-        elevation: 1,
-      },
-    }),
-  },
-
-  modeButtonActive: {
-    backgroundColor: "#fee0e0",
-  },
-  modeButtonIcon: {
-    fontSize: 14,
-    marginRight: 4,
-  },
-  modeButtonText: {
-    color: THEME_COLORS.dark,
-    fontWeight: "500",
-    fontSize: 13,
-  },
-  modeButtonTextActive: {
-    color: "#e74c3c",
-  },
-  headerControls: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  inlineActionButtons: {
-    flexDirection: "row",
-    marginLeft: 8,
-    gap: 6,
   },
 });

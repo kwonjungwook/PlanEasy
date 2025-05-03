@@ -5,11 +5,24 @@ import { NavigationContainer } from "@react-navigation/native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createStackNavigator } from "@react-navigation/stack";
 import { Ionicons } from "@expo/vector-icons";
-import { View, StatusBar, Text, LogBox, Platform } from "react-native";
+import {
+  View,
+  StatusBar,
+  Text,
+  LogBox,
+  Platform,
+  Settings,
+  Linking,
+  Alert,
+  TouchableOpacity,
+} from "react-native";
 import * as SplashScreen from "expo-splash-screen";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as KakaoLogin from "@react-native-seoul/kakao-login";
 import NaverLoginService from "./src/services/NaverLoginService";
+import { initializeNotifications } from "./src/services/ImprovedFeedbackService";
+import { OVERLAY_PERMISSION } from "expo-modules-core";
+import * as IntentLauncher from "expo-intent-launcher";
 
 // 경고 무시 설정 (불필요한 경고 무시)
 LogBox.ignoreLogs([
@@ -62,6 +75,9 @@ import {
   handleNotificationResponse,
 } from "./src/services/NotificationService";
 import * as Notifications from "expo-notifications";
+
+let isNaverInitialized = false;
+let isKakaoInitialized = false;
 
 if (__DEV__) {
   console.log("개발 모드: 실제 인증 활성화");
@@ -137,6 +153,56 @@ Notifications.setNotificationHandler({
     };
   },
 });
+
+const checkAndRequestOverlayPermission = async () => {
+  if (Platform.OS !== "android") return true;
+
+  try {
+    // 이미 권한을 요청한 적이 있는지 확인
+    const hasAskedPermission = await AsyncStorage.getItem(
+      "@overlay_permission_asked"
+    );
+
+    const canDrawOverlays = await Linking.canOpenURL(
+      "package:android.settings.action.MANAGE_OVERLAY_PERMISSION"
+    );
+
+    // 권한이 있으면 true 반환
+    if (canDrawOverlays) {
+      return true;
+    }
+
+    // 권한이 없고, 아직 물어보지 않았다면 한 번만 물어봄
+    if (!hasAskedPermission) {
+      Alert.alert(
+        "권한 필요",
+        "백그라운드에서 타이머를 표시하기 위해 '다른 앱 위에 표시' 권한이 필요합니다.",
+        [
+          {
+            text: "나중에",
+            style: "cancel",
+            onPress: async () => {
+              // 사용자에게 물어봤다는 정보 저장
+              await AsyncStorage.setItem("@overlay_permission_asked", "true");
+            },
+          },
+          {
+            text: "설정으로 이동",
+            onPress: async () => {
+              await AsyncStorage.setItem("@overlay_permission_asked", "true");
+              Linking.openSettings();
+            },
+          },
+        ]
+      );
+    }
+
+    return canDrawOverlays;
+  } catch (error) {
+    console.error("오버레이 권한 확인 오류:", error);
+    return false;
+  }
+};
 
 // Schedule Stack Navigator
 const ScheduleStack = createStackNavigator();
@@ -241,6 +307,9 @@ function TabNavigator() {
             const iconName = focused ? "timer" : "timer-outline";
             return <Ionicons name={iconName} size={size} color={color} />;
           },
+          tabBarItemStyle: {
+            paddingVertical: 5,
+          },
         }}
       />
       <Tab.Screen
@@ -268,14 +337,30 @@ function AppNavigator() {
   const [appIsReady, setAppIsReady] = useState(false);
   const [initError, setInitError] = useState(null);
 
+  // 타이머 참조 보관용 ref
+  const timerRefs = useRef([]);
+
+  // 타이머 생성 시 참조 저장 함수
+  const createTimer = (callback, delay) => {
+    const id = setTimeout(callback, delay);
+    timerRefs.current.push(id);
+    return id;
+  };
+
   // 카카오 SDK 초기화 함수 - 컴포넌트 레벨에 선언
   const initializeKakaoSDK = async () => {
     try {
+      // 이미 초기화되었으면 스킵
+      if (isKakaoInitialized) {
+        console.log("카카오 SDK 이미 초기화됨, 스킵");
+        return true;
+      }
+
       console.log("카카오 SDK 초기화 시작");
 
       if (!KakaoLogin) {
         console.error("카카오 로그인 SDK를 찾을 수 없습니다");
-        return;
+        return false;
       }
 
       // 사용 가능한 메서드 확인
@@ -285,30 +370,48 @@ function AppNavigator() {
       if (typeof KakaoLogin.init === "function") {
         await KakaoLogin.init("8914389a91c8b805636ddfac88b9f019");
         console.log("카카오 SDK 초기화 완료");
+        isKakaoInitialized = true;
+        return true;
       } else {
         console.log("카카오 SDK init 메서드 없음 - 자동 초기화 예상");
+        isKakaoInitialized = true; // 자동 초기화 가정
+        return true;
       }
     } catch (error) {
       console.error("카카오 SDK 초기화 오류:", error);
+      return false;
     }
   };
 
   // App.js의 initializeNaverSDK 함수 수정 버전
-
   const initializeNaverSDK = async () => {
     try {
+      // 이미 초기화되었으면 스킵
+      if (isNaverInitialized) {
+        console.log("네이버 SDK 이미 초기화됨, 스킵");
+        return true;
+      }
+
       console.log("네이버 SDK 초기화 시작");
 
-      // 네이티브 모듈 직접 호출
-      await NaverLoginService.initialize(
-        "Y3OUgvCptmtmaPTb9GLc", // clientId
-        "iEoHx5dLJs", // clientSecret
-        "PlanEasy" // clientName
-      );
+      // 객체 형태로 설정값 전달
+      const naverConfig = {
+        kConsumerKey: "Y3OUgvCptmtmaPTb9GLc",
+        kConsumerSecret: "iEoHx5dLJs",
+        kServiceAppName: "PlanEasy",
+        kServiceAppUrlScheme: "naverY3OUgvCptmtmaPTb9GLc",
+        kConsumerCallbackUrl: "naverY3OUgvCptmtmaPTb9GLc://oauth",
+      };
+
+      // 객체로 전달
+      await NaverLoginService.initialize(naverConfig);
 
       console.log("네이버 SDK 초기화 완료");
+      isNaverInitialized = true;
+      return true;
     } catch (error) {
       console.error("네이버 SDK 초기화 오류:", error);
+      return false;
     }
   };
 
@@ -324,8 +427,10 @@ function AppNavigator() {
       await initializeNaverSDK();
 
       console.log("소셜 로그인 SDK 초기화 완료");
+      return true;
     } catch (error) {
       console.error("소셜 로그인 SDK 초기화 오류:", error);
+      return false;
     }
   };
 
@@ -364,7 +469,7 @@ function AppNavigator() {
 
           // 알림에 화면 정보가 있으면 해당 화면으로 이동
           if (data && data.screen && navigationRef.current) {
-            setTimeout(() => {
+            const timerID = createTimer(() => {
               try {
                 navigationRef.current.navigate(data.screen);
               } catch (error) {
@@ -376,13 +481,14 @@ function AppNavigator() {
       );
 
       console.log("알림 시스템 설정 완료");
+      return true;
     } catch (error) {
       console.error("알림 설정 오류:", error);
-      // 알림 설정 실패해도 앱은 계속 진행
+      return false;
     }
   };
 
-  // prepareApp 함수를 컴포넌트 레벨에 선언
+  // prepareApp 함수 내에 오버레이 권한 확인 코드 추가 (수정된 prepareApp 함수)
   const prepareApp = async () => {
     try {
       console.log("앱 초기화 작업 시작...");
@@ -398,9 +504,43 @@ function AppNavigator() {
       if (!app) console.warn("Firebase 앱 초기화 상태 확인 중...");
       if (!auth) console.warn("Firebase 인증 초기화 상태 확인 중...");
 
-      // 추가 초기화 시간 및 알림 설정
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      // 오버레이 권한 확인 (Android 전용)
+      if (Platform.OS === "android") {
+        console.log("오버레이 권한 확인 중...");
+        const hasOverlayPermission = await checkAndRequestOverlayPermission();
+        console.log(
+          "오버레이 권한 상태:",
+          hasOverlayPermission ? "허용됨" : "거부됨"
+        );
+
+        // 권한이 없어도 앱은 계속 실행 (선택적 기능이므로)
+        if (!hasOverlayPermission) {
+          console.log(
+            "오버레이 권한이 거부되었습니다. 일부 기능이 제한될 수 있습니다."
+          );
+        }
+
+        // 오버레이 서비스 시작 로직 (네이티브 모듈을 통해)
+        try {
+          if (hasOverlayPermission) {
+            // 이 부분은 실제 네이티브 모듈이 구현된 후 활성화
+            // NativeModules.TimerOverlayModule.initialize();
+            console.log("타이머 오버레이 서비스 초기화됨");
+          }
+        } catch (error) {
+          console.error("타이머 오버레이 서비스 초기화 오류:", error);
+        }
+      }
+
+      // 추가 초기화 시간 - 타이머 사용
+      await new Promise((resolve) => {
+        const timerID = createTimer(resolve, 500);
+      });
+
+      // 알림 설정
       await setupNotifications();
+
+      await initializeNotifications();
 
       console.log("앱 초기화 완료");
       setAppIsReady(true);
@@ -410,7 +550,7 @@ function AppNavigator() {
       setAppIsReady(true); // 오류가 있어도 앱은 계속 진행
     } finally {
       // 스플래시 화면 표시 (1.5초)
-      setTimeout(async () => {
+      const splashTimerID = createTimer(async () => {
         try {
           await SplashScreen.hideAsync();
         } catch (e) {
@@ -421,15 +561,27 @@ function AppNavigator() {
   };
 
   useEffect(() => {
-    // 앱 초기화 실행 - 이제 prepareApp이 컴포넌트 스코프에 있으므로 참조 가능
+    // 앱 초기화 실행
     prepareApp();
-  }, []);
 
-  // 컴포넌트 언마운트 시 리스너 정리
-  useEffect(() => {
+    // 정리 함수 - 컴포넌트 언마운트 시 정리
     return () => {
+      // 모든 타이머 정리
+      timerRefs.current.forEach(clearTimeout);
+
+      // 알림 리스너 정리
       if (notificationListenersRef.current) {
         notificationListenersRef.current.remove();
+      }
+
+      // 오버레이 서비스 정리
+      if (Platform.OS === "android") {
+        try {
+          // NativeModules.TimerOverlayModule.cleanup();
+          console.log("타이머 오버레이 서비스 정리됨");
+        } catch (error) {
+          console.error("타이머 오버레이 서비스 정리 오류:", error);
+        }
       }
     };
   }, []);
@@ -481,13 +633,6 @@ function AppNavigator() {
             presentation: "modal",
             headerShown: false,
           }}
-        />
-
-        {/* 약관 동의 화면 추가 */}
-        <RootStack.Screen
-          name="TermsAgreement"
-          component={TermsAgreementScreen}
-          options={{ headerShown: false }}
         />
 
         {/* Subscription screen - for managing subscription */}

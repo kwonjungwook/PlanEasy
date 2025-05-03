@@ -9,6 +9,7 @@ import {
   Animated,
   SafeAreaView,
   FlatList,
+  Easing,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useProgress } from "../context/ProgressContext";
@@ -22,6 +23,7 @@ const StreakScreen = ({ navigation }) => {
     checkAttendance = () => {},
     STREAK_REWARDS = {},
     earnedBadges = [],
+    attendanceData = {}, // 추가된 부분
   } = useProgress() || {};
 
   // 기본 보상 값 정의 (STREAK_REWARDS가 없을 경우 대비)
@@ -70,7 +72,7 @@ const StreakScreen = ({ navigation }) => {
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const flameSize = useRef(new Animated.Value(1)).current;
 
-  // 불꽃 애니메이션 시작
+  // 애니메이션 설정 부분 수정
   useEffect(() => {
     Animated.loop(
       Animated.sequence([
@@ -87,18 +89,20 @@ const StreakScreen = ({ navigation }) => {
       ])
     ).start();
 
-    // 체크되지 않은 경우에만 깜빡임 애니메이션
+    // 체크되지 않은 경우에만 깜빡임 애니메이션 - 부드럽게 수정
     if (!checkedToday) {
       Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, {
-            toValue: 1.1,
-            duration: 700,
+            toValue: 1.05, // 1.1에서 1.05로 줄여서 덜 과장되게
+            duration: 1200, // 700에서 1200으로 늘려서 더 천천히
+            easing: Easing.inOut(Easing.ease), // easing 함수 추가
             useNativeDriver: true,
           }),
           Animated.timing(pulseAnim, {
             toValue: 1,
-            duration: 700,
+            duration: 1200, // 700에서 1200으로 늘려서 더 천천히
+            easing: Easing.inOut(Easing.ease), // easing 함수 추가
             useNativeDriver: true,
           }),
         ])
@@ -115,20 +119,37 @@ const StreakScreen = ({ navigation }) => {
 
   // 이번 주 출석 상태 (임의의 데이터, 실제로는 저장된 데이터에서 가져와야 함)
   const weeklyAttendance = daysOfWeek.map((day, index) => {
+    // 오늘 기준으로 이번 주의 시작일(일요일) 구하기
+    const startOfWeek = new Date();
+    startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
+
+    // 해당 요일의 날짜 계산
+    const currentDate = new Date(startOfWeek);
+    currentDate.setDate(startOfWeek.getDate() + index);
+
+    // 날짜를 YYYY-MM-DD 형식으로 변환
+    const dateStr = currentDate.toISOString().split("T")[0];
+
+    // 미래 날짜인 경우
     if (index > dayOfWeek) {
-      return { day, status: "future" }; // 아직 오지 않은 날
-    } else if (index === dayOfWeek && !checkedToday) {
-      return { day, status: "today" }; // 오늘 (아직 체크 안함)
-    } else if (index === dayOfWeek && checkedToday) {
-      return { day, status: "checked" }; // 오늘 (체크함)
-    } else if (streak > 0 && index === dayOfWeek - 1) {
-      return { day, status: "checked" }; // 어제 (현재 streak가 있다면 체크했음)
-    } else if (streak > 1 && index === dayOfWeek - 2) {
-      return { day, status: "checked" }; // 그저께 (streak가 2 이상이면 체크했음)
-    } else if (streak > 2 && index === dayOfWeek - 3) {
-      return { day, status: "checked" }; // 그그저께 (streak가 3 이상이면 체크했음)
-    } else {
-      return { day, status: Math.random() > 0.3 ? "checked" : "missed" }; // 랜덤 (실제로는 저장된 데이터 사용)
+      return { day, status: "future", date: dateStr };
+    }
+    // 오늘인 경우
+    else if (index === dayOfWeek) {
+      return {
+        day,
+        status: checkedToday ? "checked" : "today",
+        date: dateStr,
+      };
+    }
+    // 과거 날짜인 경우 - 실제 출석 데이터로 확인
+    else {
+      const wasPresent = attendanceData[dateStr] === true;
+      return {
+        day,
+        status: wasPresent ? "checked" : "missed",
+        date: dateStr,
+      };
     }
   });
 

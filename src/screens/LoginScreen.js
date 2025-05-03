@@ -69,18 +69,12 @@ const LoginScreen = ({ route, navigation }) => {
   // 로딩 타임아웃 처리를 위한 변수
   const [loadingTimeout, setLoadingTimeout] = useState(null);
 
-  // 로그인 성공 시 네비게이션 처리 - 개선된 로직
+  // 로그인 성공 시 네비게이션 처리 부분을 찾아서 이렇게 수정하세요
   useEffect(() => {
     if (isLoggedIn && !navigationAttempted && !navigationInProgress.current) {
       console.log("로그인 성공 감지, 화면 이동 준비");
       setNavigationAttempted(true);
       navigationInProgress.current = true;
-
-      // 로딩 타임아웃 취소
-      if (loadingTimeout) {
-        clearTimeout(loadingTimeout);
-        setLoadingTimeout(null);
-      }
 
       showToast("로그인 성공!");
 
@@ -105,25 +99,33 @@ const LoginScreen = ({ route, navigation }) => {
               shouldReturnToHome: shouldReturnToHome,
             });
           } else {
-            // 약관 동의 완료 시 목적지로 이동
+            // 약관 동의 완료 시 목적지로 이동 (이 부분을 수정)
             console.log(
               `약관 동의 완료, 대상 화면: ${returnToScreen || "Main"}`
             );
 
             if (shouldReturnToHome || returnToScreen === "Main") {
               console.log("메인 화면으로 리셋");
+              // 애니메이션 없이 즉시 교체하는 방식으로 변경
               navigation.reset({
                 index: 0,
                 routes: [{ name: "Main" }],
+                key: null, // 키 제거로 이전 스택 완전히 초기화
               });
             } else {
               console.log(`${returnToScreen} 화면으로 교체`);
-              navigation.replace(returnToScreen);
+              // replace 대신 navigate를 사용하고 이동 옵션 추가
+              navigation.navigate(
+                returnToScreen,
+                {},
+                {
+                  animation: "none", // 애니메이션 비활성화
+                }
+              );
             }
           }
         } catch (error) {
           console.error("화면 이동 처리 오류:", error);
-          setLocalLoading(false); // 오류 시 로딩 상태 해제
           // 오류 시 기본 화면으로 이동
           navigation.navigate("Main");
         } finally {
@@ -131,9 +133,6 @@ const LoginScreen = ({ route, navigation }) => {
           navigationInProgress.current = false;
         }
       };
-
-      // 약간의 지연 후 네비게이션 처리 실행
-      setTimeout(handleNavigation, 1000);
     }
   }, [
     isLoggedIn,
@@ -141,7 +140,6 @@ const LoginScreen = ({ route, navigation }) => {
     returnToScreen,
     shouldReturnToHome,
     navigationAttempted,
-    loadingTimeout,
   ]);
 
   // 로딩 상태가 10초 이상 지속되면 타임아웃 처리
@@ -311,34 +309,81 @@ const LoginScreen = ({ route, navigation }) => {
       console.log("간소화된 네이버 로그인 응답:", JSON.stringify(result));
 
       if (result && result.accessToken) {
-        // 결과를 바탕으로 사용자 데이터 생성
-        const userData = {
-          uid: `naver-${Date.now()}`,
-          email: result.email || "",
-          displayName: result.name || "네이버 사용자",
-          photoURL: result.profileImage || null,
-          authProvider: "naver",
-          accessToken: result.accessToken,
-        };
+        // 프로필 정보 요청 추가
+        console.log("네이버 프로필 정보 요청 시작");
 
-        console.log("네이버 사용자 데이터 생성:", JSON.stringify(userData));
+        try {
+          const profileInfo = await NaverLoginService.getProfile();
+          console.log("네이버 프로필 정보 응답:", JSON.stringify(profileInfo));
 
-        // 사용자 데이터 저장 처리
-        await AsyncStorage.setItem(USER_AUTH_KEY, JSON.stringify(userData));
-        console.log("네이버 사용자 데이터 AsyncStorage에 저장 완료");
+          // 사용자 데이터 생성 (프로필 정보 포함)
+          const userData = {
+            uid: `naver-${profileInfo.id || Date.now()}`, // 네이버 ID 기반 고유 식별자
+            email: profileInfo.email || "",
+            displayName:
+              profileInfo.name || profileInfo.nickname || "네이버 사용자",
+            photoURL: profileInfo.profileImage || null,
+            authProvider: "naver",
+            accessToken: result.accessToken,
+            // 추가 정보
+            gender: profileInfo.gender,
+            age: profileInfo.age,
+            birthday: profileInfo.birthday,
+          };
 
-        // AuthContext에 사용자 데이터 설정
-        if (typeof setUser === "function") {
-          console.log("AuthContext에 사용자 데이터 설정 중");
-          setUser(userData);
-          console.log("AuthContext 사용자 데이터 설정 완료");
-        } else {
-          console.error("setUser 함수를 찾을 수 없음");
-          throw new Error("인증 컨텍스트 오류: setUser 함수가 없습니다");
+          console.log("네이버 사용자 데이터 생성:", JSON.stringify(userData));
+
+          // 사용자 데이터 저장 처리
+          await AsyncStorage.setItem(USER_AUTH_KEY, JSON.stringify(userData));
+          console.log("네이버 사용자 데이터 AsyncStorage에 저장 완료");
+
+          // AuthContext에 사용자 데이터 설정
+          if (typeof setUser === "function") {
+            console.log("AuthContext에 사용자 데이터 설정 중");
+            setUser(userData);
+            console.log("AuthContext 사용자 데이터 설정 완료");
+          } else {
+            console.error("setUser 함수를 찾을 수 없음");
+            throw new Error("인증 컨텍스트 오류: setUser 함수가 없습니다");
+          }
+
+          setLoginStatus("네이버 로그인 성공! 이동합니다...");
+          return true;
+        } catch (profileError) {
+          console.error("프로필 정보 요청 실패:", profileError);
+
+          // 프로필 요청 실패 시 기본 정보로 대체
+          const userData = {
+            uid: `naver-${Date.now()}`,
+            email: "",
+            displayName: "네이버 사용자",
+            photoURL: null,
+            authProvider: "naver",
+            accessToken: result.accessToken,
+          };
+
+          // 사용자 데이터 저장 처리
+          await AsyncStorage.setItem(USER_AUTH_KEY, JSON.stringify(userData));
+          console.log(
+            "네이버 사용자 데이터 AsyncStorage에 저장 완료 (기본 정보)"
+          );
+
+          // AuthContext에 사용자 데이터 설정
+          if (typeof setUser === "function") {
+            console.log("AuthContext에 사용자 데이터 설정 중");
+            setUser(userData);
+            console.log("AuthContext 사용자 데이터 설정 완료");
+          } else {
+            console.error("setUser 함수를 찾을 수 없음");
+            throw new Error("인증 컨텍스트 오류: setUser 함수가 없습니다");
+          }
+
+          // 프로필 정보 없이도 로그인은 성공처리
+          setLoginStatus(
+            "네이버 로그인 성공! (프로필 정보 없음) 이동합니다..."
+          );
+          return true;
         }
-
-        setLoginStatus("네이버 로그인 성공! 이동합니다...");
-        return true;
       } else {
         console.error("네이버 로그인 결과 없음");
         setLoginStatus("네이버 로그인에 실패했습니다. 다시 시도해주세요.");

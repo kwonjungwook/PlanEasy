@@ -31,6 +31,7 @@ import {
 } from "react-native-gesture-handler";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import HeaderBar from "../components/layout/HeaderBar";
+import { useSubscription } from "../context/SubscriptionContext";
 
 // 상수 정의
 const UNLOCKED_COLORS_STORAGE_KEY = "unlocked_schedule_colors";
@@ -211,7 +212,8 @@ const WeeklyTimetableScreen = ({ navigation }) => {
   const [showColorInfo, setShowColorInfo] = useState(false);
   const [isColorStoreModalVisible, setIsColorStoreModalVisible] =
     useState(false);
-
+  // 구독 상태 추가
+  const { isSubscribed } = useSubscription();
   // 색상 상점 모달
   const renderColorStoreModal = useCallback(() => {
     // 보유한 색상 수 계산
@@ -309,10 +311,14 @@ const WeeklyTimetableScreen = ({ navigation }) => {
             <Text style={styles.colorCategoryTitle}>보유한 색상</Text>
 
             <ScrollView style={{ maxHeight: 150 }}>
+              {/* 보유한 색상 섹션 예시 */}
               <View style={styles.colorStoreGrid}>
                 {COLOR_PALETTE.map((color, index) => {
                   // 해금된 색상만 표시
-                  const isUnlocked = unlockedColors[index] || false;
+                  const colorInfo = unlockedColors[index];
+                  const isUnlocked =
+                    colorInfo &&
+                    (colorInfo.purchased || colorInfo.subscriptionBenefit);
                   if (!isUnlocked) return null;
 
                   // 색상 희귀도
@@ -330,11 +336,19 @@ const WeeklyTimetableScreen = ({ navigation }) => {
                         <Text style={styles.colorStoreRarity}>
                           {colorRarity}
                         </Text>
-                        <Ionicons
-                          name="checkmark-circle"
-                          size={16}
-                          color="#4CAF50"
-                        />
+                        {colorInfo.purchased ? (
+                          <Ionicons
+                            name="checkmark-circle"
+                            size={16}
+                            color="#4CAF50"
+                          />
+                        ) : (
+                          <View style={styles.subscriptionBadge}>
+                            <Text style={styles.subscriptionBadgeText}>
+                              구독
+                            </Text>
+                          </View>
+                        )}
                       </View>
                     </View>
                   );
@@ -485,19 +499,35 @@ const WeeklyTimetableScreen = ({ navigation }) => {
     }
   };
 
-  // 색상 구매 함수 수정 (내역 추가)
+  // 색상이 해금되었는지 확인하는 함수 개선
+  const isColorUnlocked = useCallback(
+    (colorIndex) => {
+      const colorInfo = unlockedColors[colorIndex];
+
+      // 색상 정보가 없으면 해금되지 않음
+      if (!colorInfo) return false;
+
+      // 구매했거나 구독 혜택으로 사용 가능하면 해금됨
+      return colorInfo.purchased || colorInfo.subscriptionBenefit || false;
+    },
+    [unlockedColors]
+  );
+
+  // 색상 구매 함수 개선
   const purchaseColor = async (colorIndex) => {
     try {
-      console.log(
-        "색상 구매 시도:",
-        colorIndex,
-        "- 해금 여부:",
-        unlockedColors[colorIndex]
-      );
+      console.log("색상 구매 시도:", colorIndex);
 
-      // 이미 해금된 색상인지 확인
-      if (unlockedColors[colorIndex]) {
-        Alert.alert("알림", "이미 해금된 색상입니다.");
+      // 이미 구매한 색상인지 확인
+      const colorInfo = unlockedColors[colorIndex];
+      if (colorInfo && colorInfo.purchased) {
+        Alert.alert("알림", "이미 구매한 색상입니다.");
+        return false;
+      }
+
+      // 구독자가 추가 구매하지 않도록 방지 (이미 모든 색상 사용 가능)
+      if (isSubscribed) {
+        Alert.alert("알림", "구독 중에는 이미 모든 색상을 사용할 수 있습니다.");
         return false;
       }
 
@@ -519,24 +549,24 @@ const WeeklyTimetableScreen = ({ navigation }) => {
       // 포인트 차감
       await addPoints(-colorPrice);
 
-      // 해금된 색상에 추가
-      const updatedColors = { ...unlockedColors, [colorIndex]: true };
+      // 실제 구매한 색상 정보 업데이트
+      const updatedColors = {
+        ...unlockedColors,
+        [colorIndex]: { purchased: true },
+      };
+
+      // 구매 정보 저장
       const saveResult = await saveUnlockedColors(updatedColors);
 
       if (saveResult) {
         setUnlockedColors(updatedColors);
-        console.log(
-          "색상 해금 완료:",
-          colorIndex,
-          "- 총 해금 색상:",
-          Object.keys(updatedColors).length
-        );
+        console.log("색상 구매 완료:", colorIndex);
       }
 
-      // 구매 내역 추가 (pointHistoryManager import 필요)
+      // 구매 내역 추가 (있는 경우에만)
       try {
-        if (typeof addColorPurchase === "function") {
-          await addColorPurchase({
+        if (typeof colorPurchaseFunction === "function") {
+          await colorPurchaseFunction({
             colorIndex,
             colorName: `${colorRarity} 색상`,
             price: colorPrice,
@@ -544,12 +574,10 @@ const WeeklyTimetableScreen = ({ navigation }) => {
         }
       } catch (historyError) {
         console.warn("색상 구매 내역 추가 실패:", historyError);
-        // 구매 내역 추가 실패는 무시하고 진행
       }
 
       // 구매 성공 메시지
       Alert.alert("구매 완료", `${colorRarity} 색상이 해금되었습니다!`);
-
       return true;
     } catch (error) {
       console.error("색상 구매 오류:", error);
@@ -559,26 +587,21 @@ const WeeklyTimetableScreen = ({ navigation }) => {
   };
 
   // 해금된 색상 중에서 무작위로 선택
-  const getRandomUnlockedColor = () => {
-    const unlockedIndices = Object.keys(unlockedColors).filter(
-      (index) => unlockedColors[index]
-    );
-
-    // 디버깅을 위한 로그 추가
-    console.log("해금된 색상 수:", unlockedIndices.length);
+  const getRandomUnlockedColor = useCallback(() => {
+    // 캐시에서 해금된 색상 인덱스 가져오기
+    const cache = colorCache.current;
+    const unlockedIndices = Object.keys(cache);
 
     if (unlockedIndices.length === 0) {
       // 해금된 색상이 없으면 기본 색상 반환
-      console.log("해금된 색상 없음, 기본 색상 사용");
       return COLOR_PALETTE[0];
     }
 
     // 해금된 색상 중 무작위 선택
     const randomIndex =
       unlockedIndices[Math.floor(Math.random() * unlockedIndices.length)];
-    console.log("선택된 색상 인덱스:", randomIndex);
-    return COLOR_PALETTE[parseInt(randomIndex)];
-  };
+    return cache[randomIndex] || COLOR_PALETTE[0];
+  }, []);
 
   // useEffect에 디버깅 코드 추가
   useEffect(() => {
@@ -717,6 +740,74 @@ const WeeklyTimetableScreen = ({ navigation }) => {
     [unlockedColors]
   );
 
+  // 구독 상태에 따라 색상 해금 처리
+  // 가장 중요한 색상 상태 처리 부분을 수정합니다
+  // 구독 상태에 따라 색상 해금 처리하는 useEffect
+
+  useEffect(() => {
+    const handleSubscriptionColors = async () => {
+      try {
+        // 1. 먼저 사용자가 실제로 구매한 색상 불러오기
+        const purchasedColors = await loadUnlockedColors();
+        console.log(
+          "사용자가 구매한 색상 불러옴:",
+          Object.keys(purchasedColors).length,
+          "개"
+        );
+
+        if (isSubscribed) {
+          console.log("구독자 확인: 모든 색상 접근 권한 부여");
+
+          // 구독자의 경우, 저장된 구매 기록은 그대로 두고
+          // 메모리에만 모든 색상 접근 권한을 부여함
+          const subscriberColorsMap = {};
+
+          // 모든 색상에 대해 임시 접근 권한 설정
+          COLOR_PALETTE.forEach((_, index) => {
+            // 이미 구매한 색상은 그대로 유지, 나머지는 '구독 혜택'으로 표시
+            subscriberColorsMap[index] = purchasedColors[index] || {
+              purchased: false,
+              subscriptionBenefit: true,
+            };
+          });
+
+          // 색상 상태 업데이트 (메모리에만)
+          setUnlockedColors(subscriberColorsMap);
+
+          console.log("구독자 모드 활성화: 모든 색상 접근 가능");
+        } else {
+          console.log("비구독자 확인: 구매한 색상만 사용 가능");
+
+          // 기본 색상이 없는 경우 초기 색상 세트 제공
+          if (Object.keys(purchasedColors).length === 0) {
+            const initialColors = {
+              0: { purchased: true }, // 파란색 - 기본
+              1: { purchased: true }, // 녹색
+              2: { purchased: true }, // 남색
+              4: { purchased: true }, // 민트
+              6: { purchased: true }, // 주황색
+            };
+
+            await saveUnlockedColors(initialColors);
+            setUnlockedColors(initialColors);
+            console.log("초기 색상 세트 제공 완료");
+          } else {
+            // 구매한 색상만 설정
+            setUnlockedColors(purchasedColors);
+          }
+        }
+      } catch (error) {
+        console.error("구독 색상 처리 오류:", error);
+
+        // 오류 발생 시 기본 색상이라도 제공
+        const fallbackColors = { 0: { purchased: true } };
+        setUnlockedColors(fallbackColors);
+      }
+    };
+
+    handleSubscriptionColors();
+  }, [isSubscribed]); // 구독 상태가 변경될 때마다 실행
+
   // 초기 색상 로드
   useEffect(() => {
     const loadColors = async () => {
@@ -802,6 +893,22 @@ const WeeklyTimetableScreen = ({ navigation }) => {
     };
   }, []);
 
+  const colorCache = useRef({});
+  // 색상 변환 함수 최적화 - 동일한 색상에 대한 계산 결과를 캐싱
+  const getColorWithCache = useCallback((color) => {
+    if (!color) return COLOR_PALETTE[0];
+
+    // 이미 캐시에 있으면 캐시된 결과 반환
+    if (colorCache.current[color]) {
+      return colorCache.current[color];
+    }
+
+    // 없으면 변환 후 캐시에 저장
+    const transformedColor = ensureRGBA(color);
+    colorCache.current[color] = transformedColor;
+    return transformedColor;
+  }, []);
+
   // 해당 요일, 시간에 일정 찾기
   const findSchedulesByDayAndHour = useCallback(
     (day, hour) => {
@@ -829,38 +936,20 @@ const WeeklyTimetableScreen = ({ navigation }) => {
     (day, hour) => {
       const scheduleItems = findSchedulesByDayAndHour(day, hour);
 
-      // 디버깅: 해금된 색상 수와 색상 할당 추적
-      const unlockedCount = Object.keys(unlockedColors).filter(
-        (k) => unlockedColors[k]
-      ).length;
-      console.log(`시간 ${hour}:00 - 해금된 색상 수: ${unlockedCount}`);
-
-      // 로컬 색상 매핑 적용
       return scheduleItems.map((schedule) => {
-        // scheduleColors에서 저장된 색상을 우선 사용
         let color = scheduleColors[schedule.id];
 
-        // scheduleColors에 색상이 없으면 일정 자체의 색상 사용
         if (!color && schedule.color) {
           color = schedule.color;
         }
 
-        // 어떤 방식이든 색상이 없으면 요일/시간 기반 색상 할당
         if (!color) {
           color = getColorByDayOrTime(day, hour);
         }
 
-        // 이 부분에 개별 일정 색상 디버깅 추가 (안전하게)
-        if (schedule && schedule.id) {
-          console.log(
-            `일정 [${schedule.id.slice(0, 6)}...]: 최종 색상 = ${color}`
-          );
-        }
-
-        // 최종적으로 RGBA 형식으로 변환
         return {
           ...schedule,
-          color: ensureRGBA(color),
+          color: getColorWithCache(color), // ensureRGBA 대신 캐싱 함수 사용
         };
       });
     },
@@ -868,12 +957,13 @@ const WeeklyTimetableScreen = ({ navigation }) => {
       findSchedulesByDayAndHour,
       scheduleColors,
       getColorByDayOrTime,
-      unlockedColors,
+      getColorWithCache,
     ]
   );
 
   // 그리고 다음 함수를 추가하여 해금된 색상을 확인하는 로그 함수 만들기
-  const logUnlockedColors = () => {
+  const logUnlockedColors = useCallback(() => {
+    // 이 함수는 초기 로드 시에만 호출되도록 합니다
     const unlockedIndices = Object.keys(unlockedColors).filter(
       (k) => unlockedColors[k]
     );
@@ -881,7 +971,7 @@ const WeeklyTimetableScreen = ({ navigation }) => {
     console.log(`총 해금 색상 수: ${unlockedIndices.length}`);
     console.log(`해금된 색상 인덱스: ${unlockedIndices.join(", ")}`);
     console.log("========================");
-  };
+  }, [unlockedColors]);
 
   const scrollToCurrentTime = useCallback(
     (hour, force = false) => {
@@ -899,6 +989,26 @@ const WeeklyTimetableScreen = ({ navigation }) => {
     },
     [scale, userHasScrolled]
   );
+
+  useEffect(() => {
+    // 색상 캐시 초기화 - 필요한 경우에만 수행
+    if (
+      Object.keys(colorCache.current).length === 0 &&
+      Object.keys(unlockedColors).length > 0
+    ) {
+      const cachedColorsMap = {};
+
+      // 해금된 색상을 캐시에 저장
+      Object.keys(unlockedColors).forEach((index) => {
+        if (unlockedColors[index]) {
+          cachedColorsMap[index] = COLOR_PALETTE[index];
+        }
+      });
+
+      colorCache.current = cachedColorsMap;
+      console.log("색상 캐시 초기화 완료");
+    }
+  }, [unlockedColors]);
 
   // 화면 날짜 이동 (다음 주, 이전 주)
   const changeWeek = useCallback(

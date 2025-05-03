@@ -247,39 +247,63 @@ export const AuthProvider = ({ children }) => {
   };
 
   // 카카오 로그인 처리
+  // 카카오 로그인 처리
   const loginWithKakao = async () => {
     try {
       setLoading(true);
       setError(null);
 
       console.log("AuthContext: kakaoSignIn 함수 호출 직전");
-      const userData = await signInWithKakao();
-      console.log("AuthContext: kakaoSignIn 함수 호출 완료, 결과:", !!userData);
 
-      if (userData) {
+      // 잘못된 useGoogleAuthInstance.signInWithKakao() 대신 직접 호출
+      const userData = await signInWithKakao();
+
+      console.log(
+        "AuthContext: kakaoSignIn 함수 호출 완료, 결과:",
+        userData ? true : false
+      );
+
+      // 사용자가 취소한 경우 (null 반환)
+      if (userData === null) {
+        console.log("카카오 로그인이 사용자에 의해 취소됨");
+        return null; // 취소는 null 반환
+      }
+
+      // 로그인 성공한 경우
+      if (userData && userData.uid) {
         console.log(
           "카카오 로그인 성공, 사용자:",
-          userData.displayName || "알 수 없음"
+          userData.displayName?.charAt(0) || "k"
         );
 
         // 사용자 데이터 저장
-        try {
-          await AsyncStorage.setItem(USER_AUTH_KEY, JSON.stringify(userData));
-          console.log("카카오 사용자 데이터가 AsyncStorage에 저장됨");
-        } catch (storageError) {
-          console.warn("AsyncStorage에 카카오 사용자 저장 실패:", storageError);
-        }
-
-        // 상태 업데이트
         setUser(userData);
+        setError(null);
+
+        // AsyncStorage에 사용자 데이터 저장
+        await AsyncStorage.setItem(USER_AUTH_KEY, JSON.stringify(userData));
+        console.log("카카오 사용자 데이터가 AsyncStorage에 저장됨");
+
         return true;
       }
 
+      // 실패한 경우
       console.log("카카오 로그인 실패 또는 취소됨");
       return false;
-    } catch (err) {
-      console.error("카카오 로그인 오류:", err);
-      setError(err.message || "카카오 로그인 중 오류가 발생했습니다");
+    } catch (error) {
+      console.error("카카오 로그인 오류:", error);
+
+      // 사용자 취소 에러 확인
+      if (
+        error &&
+        (error.toString().includes("user cancelled") ||
+          error.message?.includes("user cancelled"))
+      ) {
+        console.log("카카오 로그인이 사용자에 의해 취소됨");
+        return null; // 취소는 null 반환
+      }
+
+      setError("카카오 로그인 중 오류가 발생했습니다: " + error.message);
       return false;
     } finally {
       setLoading(false);

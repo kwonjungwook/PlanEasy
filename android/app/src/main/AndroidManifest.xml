@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
   xmlns:tools="http://schemas.android.com/tools">
+  <!-- 권한 선언 -->
   <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
   <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
   <uses-permission android:name="android.permission.INTERNET" />
@@ -12,7 +13,10 @@
   <uses-permission android:name="android.permission.VIBRATE" />
   <uses-permission android:name="android.permission.WAKE_LOCK" />
   <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
 
+
+  <!-- 패키지 쿼리 -->
   <queries>
     <intent>
       <action android:name="android.intent.action.VIEW" />
@@ -20,7 +24,6 @@
       <data android:scheme="https" />
     </intent>
     <package android:name="com.kakao.talk" />
-    <!-- 네이버 앱 관련 패키지 추가 -->
     <package android:name="com.nhn.android.search" />
     <package android:name="com.naver.nid.login" />
   </queries>
@@ -35,7 +38,13 @@
     android:requestLegacyExternalStorage="true"
     android:usesCleartextTraffic="true">
 
-    <!-- 기존 메타데이터 유지 -->
+    <!-- 서비스 -->
+    <service android:name="com.reactnativeforegroundservice.ForegroundService" />
+    <service android:name="com.reactnativeforegroundservice.ForegroundServiceTask" />
+    <receiver android:name="com.reactnativeforegroundservice.ForegroundServiceButtonReceiver" />
+
+
+    <!-- 앱 메타데이터 -->
     <meta-data android:name="com.google.firebase.messaging.default_notification_color"
       android:resource="@color/notification_icon_color" />
     <meta-data android:name="com.google.firebase.messaging.default_notification_icon"
@@ -49,16 +58,12 @@
       android:value="ALWAYS" />
     <meta-data android:name="expo.modules.updates.EXPO_UPDATES_LAUNCH_WAIT_MS" android:value="0" />
 
-    <!-- 네이버 로그인 메타데이터 추가 (공식 문서 기준) -->
-    <meta-data
-      android:name="com.naver.sdk.clientId"
-      android:value="Y3OUgvCptmtmaPTb9GLc" />
-    <meta-data
-      android:name="com.naver.sdk.clientSecret"
-      android:value="iEoHx5dLJs" />
-    <meta-data
-      android:name="com.naver.sdk.clientName"
-      android:value="PlanEasy" />
+    <!-- 네이버 로그인 메타데이터 -->
+    <meta-data android:name="com.naver.sdk.clientId" android:value="Y3OUgvCptmtmaPTb9GLc" />
+    <meta-data android:name="com.naver.sdk.clientSecret" android:value="iEoHx5dLJs" />
+    <meta-data android:name="com.naver.sdk.clientName" android:value="PlanEasy" />
+    <meta-data android:name="com.naver.sdk.callbackUrl"
+      android:value="naverY3OUgvCptmtmaPTb9GLc://oauth" />
 
     <!-- 메인 액티비티 -->
     <activity android:name=".MainActivity"
@@ -75,55 +80,47 @@
         <category android:name="android.intent.category.LAUNCHER" />
       </intent-filter>
 
-      <!-- URL 스킴 인텐트 필터 -->
+      <!-- Expo 개발 클라이언트 인텐트 필터 -->
+      <intent-filter>
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <category android:name="android.intent.category.BROWSABLE" />
+        <data android:scheme="exp+planeasy" android:host="expo-development-client" />
+      </intent-filter>
+
+      <!-- 앱 스키마 인텐트 필터 -->
       <intent-filter>
         <action android:name="android.intent.action.VIEW" />
         <category android:name="android.intent.category.DEFAULT" />
         <category android:name="android.intent.category.BROWSABLE" />
         <data android:scheme="com.kwonjihoo.PlanEasy" />
-        <data android:scheme="exp+planeasy" />
-      </intent-filter>
-
-      <!-- Auto-verify 인텐트 필터 -->
-      <intent-filter android:autoVerify="true" data-generated="true">
-        <action android:name="android.intent.action.VIEW" />
-        <data android:scheme="com.kwonjihoo.PlanEasy" />
-        <category android:name="android.intent.category.BROWSABLE" />
-        <category android:name="android.intent.category.DEFAULT" />
-      </intent-filter>
-
-      <!-- OAuth 인텐트 필터 -->
-      <intent-filter data-generated="true">
-        <action android:name="android.intent.action.VIEW" />
-        <data android:scheme="com.kwonjihoo.PlanEasy" android:host="oauth" />
-        <category android:name="android.intent.category.BROWSABLE" />
-        <category android:name="android.intent.category.DEFAULT" />
       </intent-filter>
 
       <!-- 카카오 로그인 인텐트 필터 -->
-      <intent-filter data-generated="true">
+      <intent-filter>
         <action android:name="android.intent.action.VIEW" />
-        <data android:scheme="kakao8914389a91c8b805636ddfac88b9f019" android:host="oauth" />
-        <category android:name="android.intent.category.BROWSABLE" />
         <category android:name="android.intent.category.DEFAULT" />
+        <category android:name="android.intent.category.BROWSABLE" />
+        <data android:scheme="kakao8914389a91c8b805636ddfac88b9f019" android:host="oauth" />
       </intent-filter>
 
-      <!-- 네이버 로그인용 URL 스킴 인텐트 필터 -->
+      <!-- 네이버 로그인 인텐트 필터 -->
+      <intent-filter>
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <category android:name="android.intent.category.BROWSABLE" />
+        <data android:scheme="naverY3OUgvCptmtmaPTb9GLc" android:host="oauth" />
+      </intent-filter>
+
+      <!-- 추가 URL 스키마 -->
       <intent-filter>
         <action android:name="android.intent.action.VIEW" />
         <category android:name="android.intent.category.DEFAULT" />
         <category android:name="android.intent.category.BROWSABLE" />
         <data android:scheme="planeasy" />
         <data android:scheme="http" android:host="naveroauth" />
-      </intent-filter>
-
-      <!-- 네이버 앱 ID 기반 URL 스킴 인텐트 필터 -->
-      <intent-filter>
-        <action android:name="android.intent.action.VIEW" />
-        <category android:name="android.intent.category.DEFAULT" />
-        <category android:name="android.intent.category.BROWSABLE" />
-        <data android:scheme="naverY3OUgvCptmtmaPTb9GLc" android:host="oauth" />
-        <data android:scheme="http" android:host="naveroauth" />
+        <data android:scheme="localhost" android:host="19006" />
+        <data android:scheme="planeasy-firebase" android:host="auth" android:path="/handler" />
       </intent-filter>
     </activity>
 
@@ -137,34 +134,29 @@
       </intent-filter>
     </activity>
 
-    <!-- 네이버 로그인 액티비티 - 공식 문서 기준으로 수정 -->
+    <!-- 네이버 로그인 액티비티 -->
     <activity
       android:name="com.navercorp.nid.oauth.ui.NidOAuthLoginActivity"
       android:configChanges="orientation|screenSize"
       android:screenOrientation="portrait"
       android:exported="true" />
+
     <activity
       android:name="com.navercorp.nid.oauth.ui.NidOAuthCustomTabActivity"
       android:configChanges="orientation|screenSize"
       android:exported="true">
-      <!-- 네이버 로그인 콜백 처리를 위한 인텐트 필터 추가 -->
       <intent-filter>
         <action android:name="android.intent.action.VIEW" />
         <category android:name="android.intent.category.DEFAULT" />
         <category android:name="android.intent.category.BROWSABLE" />
         <data android:scheme="naverY3OUgvCptmtmaPTb9GLc" android:host="oauth" />
-        <data android:scheme="planeasy" />
-        <data android:scheme="http" android:host="naveroauth" />
-        <data android:scheme="localhost" android:host="19006" />
-        <data android:scheme="planeasy-firebase" android:host="auth" android:path="/handler" />
       </intent-filter>
     </activity>
+
     <activity
       android:name="com.navercorp.nid.oauth.NidOAuthBridgeActivity"
       android:configChanges="orientation|screenSize"
-      android:exported="true">
-      <!-- 필요한 경우 인텐트 필터 추가 -->
-    </activity>
+      android:exported="true" />
 
   </application>
 </manifest>

@@ -31,6 +31,7 @@ const COMPLETED_TASKS_KEY = "@completed_tasks_count";
 const MORNING_TASKS_KEY = "@morning_tasks_count";
 const EVENING_TASKS_KEY = "@evening_tasks_count";
 const PERFECT_DAYS_KEY = "@perfect_days_count";
+const ATTENDANCE_DATA_KEY = "@attendance_data"; // 출석 기록 저장 키
 
 // 모든 가능한 배지 (기본 + 확장)
 const ALL_BADGES = enhanceBadgeSystem();
@@ -79,6 +80,7 @@ export const ProgressProvider = ({ children }) => {
   const [unusedDDaySlots, setUnusedDDaySlots] = useState(0); // 초기값 1 (최초 1개 무료 제공)
   const [dailyMissions, setDailyMissions] = useState([]);
   const [weeklyMissions, setWeeklyMissions] = useState([]);
+  const [attendanceData, setAttendanceData] = useState({});
 
   // 초기 데이터 로드
   useEffect(() => {
@@ -100,6 +102,7 @@ export const ProgressProvider = ({ children }) => {
           perfectDaysData,
           dailyMissionsData, // 추가
           weeklyMissionsData, // 추가
+          attendanceDataStr,
         ] = await Promise.all([
           AsyncStorage.getItem(POINTS_STORAGE_KEY),
           AsyncStorage.getItem(XP_STORAGE_KEY),
@@ -116,8 +119,11 @@ export const ProgressProvider = ({ children }) => {
           AsyncStorage.getItem(PERFECT_DAYS_KEY),
           AsyncStorage.getItem("DAILY_MISSIONS_KEY"), // 추가
           AsyncStorage.getItem("WEEKLY_MISSIONS_KEY"), // 추가
+          AsyncStorage.getItem(ATTENDANCE_DATA_KEY),
         ]);
-
+        if (attendanceDataStr) {
+          setAttendanceData(JSON.parse(attendanceDataStr));
+        }
         // 포인트 설정
         if (pointsData) {
           setPoints(parseInt(pointsData));
@@ -233,6 +239,158 @@ export const ProgressProvider = ({ children }) => {
 
     loadData();
   }, []);
+
+  // checkAttendance 함수 개선 - 안정성 및 오류 처리 강화
+  const checkAttendance = async () => {
+    try {
+      // 로컬 시간 기준으로 오늘 날짜 계산
+      const today = formatDateStr(new Date());
+
+      // 이미 오늘 체크했는지 확인
+      if (checkedToday) {
+        ToastEventSystem.showToast("이미 오늘은 출석체크를 했습니다", 2000);
+        return false;
+      }
+
+      // 출석 기록 유효성 검증
+      const validAttendanceData = typeof attendanceData === 'object' ? attendanceData : {};
+      
+      // 출석 기록 업데이트
+      const newAttendanceData = { ...validAttendanceData, [today]: true };
+      
+      try {
+        // 데이터 저장 먼저 수행 (상태 업데이트 전)
+        await AsyncStorage.setItem(
+          ATTENDANCE_DATA_KEY,
+          JSON.stringify(newAttendanceData)
+        );
+
+        // 저장 성공 후 상태 업데이트
+        setAttendanceData(newAttendanceData);
+      } catch (storageError) {
+        console.error("출석 데이터 저장 오류:", storageError);
+        ToastEventSystem.showToast("출석 기록 저장 중 오류가 발생했습니다", 2000);
+        return false;
+      }
+
+      // 연속 출석 계산 - 안전한 로직으로 처리
+      let newStreak = 0;
+      try {
+        newStreak = calculateStreak(newAttendanceData);
+        
+        // 스트릭 값 저장
+        await AsyncStorage.setItem(STREAK_STORAGE_KEY, newStreak.toString());
+        setStreak(newStreak);
+      } catch (streakError) {
+        console.error("스트릭 계산 오류:", streakError);
+        // 오류가 발생해도 기본값 사용하여 진행
+        newStreak = streak + 1;
+      }
+
+      try {
+        // 오늘 날짜 저장
+        await AsyncStorage.setItem(LAST_CHECK_DATE_KEY, today);
+        setLastCheckDate(today);
+
+        // 오늘 체크 표시
+        await AsyncStorage.setItem(CHECKED_TODAY_KEY, today);
+        setCheckedToday(true);
+      } catch (dateError) {
+        console.error("날짜 데이터 저장 오류:", dateError);
+        // 중요 단계이므로 오류 시 사용자에게 알림
+        ToastEventSystem.showToast("출석 정보 저장 중 오류가 발생했습니다", 2000);
+      }
+
+      // 보상 계산
+      let reward = STREAK_REWARDS[1] || { points: 5, xp: 10 }; // 안전한 기본값 제공
+
+      // 특별 보상 마일스톤 체크
+      if (STREAK_REWARDS[newStreak]) {
+        reward = STREAK_REWARDS[newStreak];
+      }
+
+      try {
+        // 포인트 및 XP 추가
+        await addPoints(reward.points, `${newStreak}일 연속 출석`);
+        await addXP(reward.xp, `${newStreak}일 연속 출석`);
+
+        // 출석 체크 미션 업데이트
+        await checkMissionProgress("attendance_check", {
+          currentStreak: newStreak,
+        });
+        
+        // 연속 출석 배지 확인
+        await checkStreakBadges(newStreak);
+      } catch (rewardError) {
+        console.error("보상 처리 오류:", rewardError);
+        // 보상 처리 실패해도 출석은 인정
+      }
+
+      ToastEventSystem.showToast(
+        `${newStreak}일 연속 출석! ${reward.points}P, ${reward.xp}XP 획득`,
+        3000
+      );
+
+      return true;
+    } catch (error) {
+      console.error("출석 체크 오류:", error);
+      // 사용자에게 일반적인 오류 메시지 표시
+      ToastEventSystem.showToast("출석 체크 중 오류가 발생했습니다. 다시 시도해주세요.", 3000);
+      return false;
+    }
+  };
+
+  // 연속 출석 계산 함수 개선 - 안전성 및 오류 처리 강화
+  const calculateStreak = (data) => {
+    if (!data || typeof data !== 'object') {
+      console.warn('calculateStreak: 유효하지 않은 데이터 형식', data);
+      return 0; // 유효하지 않은 데이터일 경우 0 반환
+    }
+
+    // 날짜 유틸리티 함수 - 로컬 타임존 기반 포맷팅
+    const formatDateStr = (date) => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+
+    // 로컬 시간 기준으로 날짜 계산 (타임존 문제 해결)
+    const now = new Date();
+    const today = formatDateStr(now);
+    
+    // 오늘 체크했으면 1부터 시작
+    let currentStreak = data[today] === true ? 1 : 0;
+    
+    if (currentStreak === 0) {
+      return 0; // 오늘 출석하지 않았으면 연속 출석 없음
+    }
+
+    // 안전한 날짜 계산을 위한 변수들
+    const MAX_DAYS_TO_CHECK = 366; // 무한 루프 방지용 최대 검사 일수
+    let daysChecked = 0;
+    
+    // 어제부터 거슬러 올라가며 연속된 출석 체크
+    const checkDate = new Date(now);
+    checkDate.setDate(checkDate.getDate() - 1); // 어제부터 시작
+    
+    while (daysChecked < MAX_DAYS_TO_CHECK) {
+      // 체크할 날짜 문자열 형식으로 변환
+      const checkDateStr = formatDateStr(checkDate);
+      
+      // 해당 날짜에 출석 기록이 정확히 true인지 확인
+      if (data[checkDateStr] === true) {
+        currentStreak++;
+        checkDate.setDate(checkDate.getDate() - 1); // 하루 전으로 이동
+      } else {
+        break; // 연속 출석이 끊김
+      }
+      
+      daysChecked++;
+    }
+
+    return currentStreak;
+  };
 
   // 미션 초기화 함수 (매일/매주 실행)
   const resetDailyMissions = async () => {
@@ -922,77 +1080,6 @@ export const ProgressProvider = ({ children }) => {
     }
   };
 
-  // 출석 체크 함수 (확장)
-  const checkAttendance = async () => {
-    try {
-      const today = new Date().toDateString();
-
-      // 이미 오늘 체크했는지 확인
-      if (checkedToday) {
-        ToastEventSystem.showToast("이미 오늘은 출석체크를 했습니다", 2000);
-        return false;
-      }
-
-      // 연속 출석 계산
-      let newStreak = 1;
-      if (lastCheckDate) {
-        const lastCheck = new Date(lastCheckDate);
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-
-        if (lastCheck.toDateString() === yesterday.toDateString()) {
-          // 어제 출석했으면 연속 증가
-          newStreak = streak + 1;
-        } else if (lastCheck.toDateString() !== today) {
-          // 어제가 아닌 다른 날이면 연속 초기화
-          newStreak = 1;
-        }
-      }
-
-      // 연속 출석 저장
-      setStreak(newStreak);
-      await AsyncStorage.setItem(STREAK_STORAGE_KEY, newStreak.toString());
-
-      // 오늘 날짜 저장
-      setLastCheckDate(today);
-      await AsyncStorage.setItem(LAST_CHECK_DATE_KEY, today);
-
-      // 오늘 체크 표시
-      setCheckedToday(true);
-      await AsyncStorage.setItem(CHECKED_TODAY_KEY, today);
-
-      // 보상 계산
-      let reward = STREAK_REWARDS[1]; // 기본 보상
-
-      // 특별 보상 마일스톤 체크
-      if (STREAK_REWARDS[newStreak]) {
-        reward = STREAK_REWARDS[newStreak];
-      }
-
-      // 포인트 및 XP 추가
-      await addPoints(reward.points, `${newStreak}일 연속 출석`);
-      await addXP(reward.xp, `${newStreak}일 연속 출석`);
-
-      // 출석 체크 미션 업데이트
-      await checkMissionProgress("attendance_check", {
-        currentStreak: newStreak,
-      });
-
-      ToastEventSystem.showToast(
-        `${newStreak}일 연속 출석! ${reward.points}P, ${reward.xp}XP 획득`,
-        3000
-      );
-
-      // 연속 출석 배지 확인
-      await checkStreakBadges(newStreak);
-
-      return true;
-    } catch (error) {
-      console.error("출석 체크 오류:", error);
-      return false;
-    }
-  };
-
   // 연속 출석 배지 확인
   const checkStreakBadges = async (currentStreak) => {
     // 연속 출석 배지 목록
@@ -1068,7 +1155,6 @@ export const ProgressProvider = ({ children }) => {
     }
   };
 
-  // D-Day 추가 시 사용할 함수 - PlannerContext의 addGoalTarget 호출 후에 실행
   const handleGoalAdded = async () => {
     try {
       // D-Day가 새로 추가되었을 때 사용 가능한 슬롯 감소
@@ -1228,7 +1314,7 @@ export const ProgressProvider = ({ children }) => {
     }
   };
 
-  // 다음 날 자정에 체크 상태 초기화
+  // 다음 날 자정에 체크 상태 초기화 - 수정
   useEffect(() => {
     const resetCheckStatus = () => {
       const now = new Date();
@@ -1238,14 +1324,22 @@ export const ProgressProvider = ({ children }) => {
 
       const timeUntilMidnight = tomorrow - now;
 
-      setTimeout(async () => {
+      const timeoutId = setTimeout(async () => {
         setCheckedToday(false);
         await AsyncStorage.removeItem(CHECKED_TODAY_KEY);
+
+        // 오늘 날짜 갱신 - 자정이 지나면 새 날짜로 업데이트
+        const newToday = new Date().toISOString().split("T")[0];
+        setLastCheckDate(newToday);
+
         resetCheckStatus(); // 다음 날을 위해 재설정
       }, timeUntilMidnight);
+
+      return () => clearTimeout(timeoutId);
     };
 
-    resetCheckStatus();
+    const cleanup = resetCheckStatus();
+    return cleanup;
   }, []);
 
   // 다음 날 자정에 체크 상태 및 일일 미션 초기화

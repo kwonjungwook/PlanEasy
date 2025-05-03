@@ -14,20 +14,19 @@ import {
   ActivityIndicator,
   SafeAreaView,
   Alert,
-  Platform,
-  Animated,
-  Easing,
+  StyleSheet,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { usePlanner } from "../context/PlannerContext";
-import { format, sub } from "date-fns";
+import { format, sub, addDays } from "date-fns";
 import { ko } from "date-fns/locale";
-import { updateReportScheduling } from "../services/FeedbackService";
 import { useNavigation } from "@react-navigation/native";
-import MainLayout from "../components/layout/MainLayout";
-import ImprovedNoticeBar from "../components/layout/ImprovedNoticeBar";
-import CategoryTabs from "../components/layout/CategoryTabs";
 import HeaderBar from "../components/layout/HeaderBar";
+import { useSubscription } from "../context/SubscriptionContext";
+import { useProgress } from "../context/ProgressContext";
+import { ToastEventSystem } from "../components/common/AutoToast";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import EnhancedFeedbackService from "../services/ImprovedFeedbackService";
 
 // Chart components
 import {
@@ -36,17 +35,39 @@ import {
   MonthlySubjectChart,
 } from "../components/reports/SimpleCharts";
 
-// Import styles from separate file
+// Import styles
 import {
   THEME_COLORS,
   getColor,
   badgeStyles,
   styles,
+  additionalStyles,
 } from "../styles/AIFeedbackScreenStyles";
 
-// Reusable collapsible card component
-const CollapsibleCard = ({ title, children, icon, borderColor }) => {
-  const [isCollapsed, setIsCollapsed] = useState(true);
+// 리포트 타입 상수
+const REPORT_TYPES = EnhancedFeedbackService.REPORT_TYPES;
+
+// 스토리지 키 상수
+const STORAGE_KEYS = {
+  LAST_VIEWED_WEEKLY: "@last_viewed_weekly_report",
+  LAST_VIEWED_MONTHLY: "@last_viewed_monthly_report",
+  NOTIFICATIONS_SETUP: "report_notifications_setup",
+};
+
+// 자동 갱신 주기 (밀리초)
+const AUTO_REFRESH_INTERVALS = EnhancedFeedbackService.AUTO_REFRESH_INTERVALS;
+
+/**
+ * 접을 수 있는 카드 컴포넌트
+ */
+const CollapsibleCard = ({
+  title,
+  children,
+  icon,
+  borderColor,
+  initiallyExpanded = false,
+}) => {
+  const [isCollapsed, setIsCollapsed] = useState(!initiallyExpanded);
 
   return (
     <View style={styles.sectionCard}>
@@ -78,70 +99,25 @@ const CollapsibleCard = ({ title, children, icon, borderColor }) => {
   );
 };
 
-const AIFeedbackScreen = () => {
-  const {
-    schedules = {},
-    tasks = {},
-    aiReports = {},
-    generateAIFeedback,
-    selectedDate,
-    earnedBadges,
-    setSelectedDate,
-    studySessions = {},
-    isPremiumUser = false,
-    goalTargets,
-    getCurrentGoals,
-  } = usePlanner() || {};
+/**
+ * 목표 및 D-Day 섹션 컴포넌트
+ */
+const GoalSection = ({ goalTargets }) => {
+  // 목표 데이터 처리
+  const processedGoals = useMemo(() => {
+    return EnhancedFeedbackService.processGoalsForReport(goalTargets);
+  }, [goalTargets]);
 
-  const [activeTab, setActiveTab] = useState("daily"); // 'daily', 'weekly', 'monthly'
-  const [isLoading, setIsLoading] = useState(false);
-  const [currentReport, setCurrentReport] = useState(null);
-  const autoRefreshTimer = useRef(null);
-  const navigation = useNavigation();
+  const hasGoals = processedGoals && processedGoals.length > 0;
 
-  const [lastUpdateTime, setLastUpdateTime] = useState(new Date());
-  const [activeCategory, setActiveCategory] = useState("all");
-  const handleCategorySelect = (categoryId) => {
-    setActiveCategory(categoryId);
-  };
-
-  // Premium upgrade handler
-  const handleUpgrade = useCallback(() => {
-    Alert.alert(
-      "프리미엄 기능",
-      "AI 심층 분석은 프리미엄 사용자만 이용할 수 있습니다. 프리미엄으로 업그레이드하면 더 자세한 분석과 인사이트를 제공받을 수 있습니다.",
-      [
-        { text: "취소", style: "cancel" },
-        {
-          text: "업그레이드 안내",
-          onPress: () => {
-            Alert.alert(
-              "프리미엄 구독 안내",
-              "프리미엄 구독은 앱스토어에서 가능합니다. 더 자세한 정보는 앱 설정에서 확인하세요."
-            );
-          },
-        },
-      ]
-    );
-  }, []);
-
-  // Remove this function as it's now handled directly in the useEffect
-
-  // Goal section component
-  const GoalSection = useCallback(() => {
-    if (!currentReport) return null;
-
-    // Get goal info from current report
-    const goalInfo = currentReport.upcomingGoalsInfo || [];
-
-    // Return null if no goals
-    if (!goalInfo || goalInfo.length === 0) {
-      return null;
-    }
-
-    return (
-      <CollapsibleCard title="D-Day 현황" icon="flag-outline">
-        {goalInfo.map((goal, index) => {
+  return (
+    <CollapsibleCard
+      title="D-Day 현황"
+      icon="flag-outline"
+      initiallyExpanded={true}
+    >
+      {hasGoals ? (
+        processedGoals.map((goal, index) => {
           let badgeStyle;
 
           if (goal.daysLeft === 0) {
@@ -153,7 +129,7 @@ const AIFeedbackScreen = () => {
           }
 
           return (
-            <View key={index} style={styles.goalDetailCard}>
+            <View key={goal.id || index} style={styles.goalDetailCard}>
               <View style={styles.goalDetailHeader}>
                 <Text style={styles.goalDetailTitle}>{goal.title}</Text>
                 <View style={[styles.dDayBadgeSmall, badgeStyle]}>
@@ -163,101 +139,490 @@ const AIFeedbackScreen = () => {
               <Text style={styles.goalDetailMessage}>{goal.message}</Text>
             </View>
           );
-        })}
-      </CollapsibleCard>
+        })
+      ) : (
+        <View style={{ padding: 16, alignItems: "center" }}>
+          <Text style={{ color: "#666", fontStyle: "italic" }}>
+            예정된 D-Day 일정이 없습니다.
+          </Text>
+          <Text
+            style={{
+              color: "#888",
+              fontSize: 12,
+              marginTop: 8,
+              textAlign: "center",
+            }}
+          >
+            목표나 중요 일정을 등록하면 여기에 표시됩니다.
+          </Text>
+        </View>
+      )}
+    </CollapsibleCard>
+  );
+};
+
+/**
+ * 오늘의 일정 및 공부 컴포넌트
+ */
+const TodayScheduleAndStudy = ({ studySessions, schedules, selectedDate }) => {
+  // 오늘의 일정 가져오기
+  const todaySchedules = useMemo(() => {
+    return schedules[selectedDate] || [];
+  }, [schedules, selectedDate]);
+
+  // 오늘의 공부 세션 가져오기
+  const todayStudySessions = useMemo(() => {
+    return studySessions[selectedDate] || [];
+  }, [studySessions, selectedDate]);
+
+  // 데이터 없음 체크
+  const hasNoData =
+    todaySchedules.length === 0 && todayStudySessions.length === 0;
+
+  // 총 공부 시간 계산
+  const totalStudyTime = useMemo(() => {
+    return todayStudySessions.reduce(
+      (total, session) => total + session.duration,
+      0
     );
-  }, [currentReport, styles]);
+  }, [todayStudySessions]);
 
-  // Set up report scheduling when app starts
-  useEffect(() => {
-    try {
-      updateReportScheduling(isPremiumUser);
-    } catch (error) {
-      console.error("Error setting up report scheduling:", error);
-    }
-  }, [isPremiumUser]);
+  // 시간 포맷 함수
+  const formatLongTime = (seconds) => {
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    return `${hours.toString().padStart(2, "0")}:${mins
+      .toString()
+      .padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+  };
 
-  // Split effects to prevent infinite loops
-
-  // Effect 1: Initial data loading when tab or date changes
-  useEffect(() => {
-    loadReportData();
-    // Set up auto-refresh timer when tab or date changes
-    setupAutoRefresh();
-
-    // Clean up timer on unmount or when dependencies change
-    return () => {
-      if (autoRefreshTimer.current) {
-        clearTimeout(autoRefreshTimer.current);
+  // 과목별 공부 시간 그룹화
+  const subjectTimes = useMemo(() => {
+    const result = {};
+    todayStudySessions.forEach((session) => {
+      const subject = session.subject || "공부시간";
+      if (!result[subject]) {
+        result[subject] = 0;
       }
-    };
-  }, [loadReportData, setupAutoRefresh]); // These callbacks have their own dependency arrays
+      result[subject] += session.duration;
+    });
+    return result;
+  }, [todayStudySessions]);
 
-  // 자동 리프레시 타이머 설정 함수 개선
-  const setupAutoRefresh = () => {
-    // 기존 타이머 정리
+  // 시간별 일정 그룹화
+  const schedulesByTime = useMemo(() => {
+    const result = {};
+
+    // 일정 그룹화
+    todaySchedules.forEach((schedule) => {
+      const hour = schedule.startTime?.split(":")[0] || "00";
+      const timeSlot = `${hour}시`;
+
+      if (!result[timeSlot]) {
+        result[timeSlot] = { schedules: [], studySessions: [] };
+      }
+
+      result[timeSlot].schedules.push(schedule);
+    });
+
+    // 공부 세션 시간별 그룹화
+    todayStudySessions.forEach((session) => {
+      if (session.timestamp) {
+        const date = new Date(session.timestamp);
+        const hour = date.getHours();
+        const timeSlot = `${hour}시`;
+
+        if (!result[timeSlot]) {
+          result[timeSlot] = { schedules: [], studySessions: [] };
+        }
+
+        result[timeSlot].studySessions.push(session);
+      }
+    });
+
+    return result;
+  }, [todaySchedules, todayStudySessions]);
+
+  // 데이터 없음 상태 표시
+  if (hasNoData) {
+    return (
+      <View style={{ padding: 16, alignItems: "center" }}>
+        <Text style={{ color: "#666", fontStyle: "italic" }}>
+          오늘의 일정과 공부 기록이 없습니다.
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={{ padding: 8 }}>
+      {/* 총 공부 시간 */}
+      {totalStudyTime > 0 && (
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            padding: 8,
+            backgroundColor: "#f5f5f5",
+            borderRadius: 8,
+            marginBottom: 16,
+          }}
+        >
+          <Text style={{ fontWeight: "bold", color: "#333" }}>
+            오늘 총 공부시간:
+          </Text>
+          <Text style={{ fontWeight: "bold", color: "#50cebb" }}>
+            {formatLongTime(totalStudyTime)}
+          </Text>
+        </View>
+      )}
+
+      {/* 과목별 공부 시간 */}
+      {Object.keys(subjectTimes).length > 0 && (
+        <View style={{ marginBottom: 16 }}>
+          <Text style={{ fontWeight: "bold", marginBottom: 8, color: "#333" }}>
+            과목별 공부시간:
+          </Text>
+          {Object.entries(subjectTimes).map(([subject, duration], index) => (
+            <View
+              key={index}
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                paddingVertical: 4,
+              }}
+            >
+              <Text style={{ color: "#555" }}>{subject}</Text>
+              <Text style={{ color: "#50cebb" }}>
+                {formatLongTime(duration)}
+              </Text>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {/* 시간대별 활동 */}
+      <Text
+        style={{
+          fontWeight: "bold",
+          marginBottom: 8,
+          marginTop: 8,
+          color: "#333",
+        }}
+      >
+        시간대별 활동:
+      </Text>
+      {Object.entries(schedulesByTime)
+        .sort(([a], [b]) => a.localeCompare(b)) // 시간순 정렬
+        .map(([timeSlot, data], index) => (
+          <View
+            key={index}
+            style={{
+              marginBottom: 12,
+              borderLeftWidth: 3,
+              borderLeftColor: "#50cebb",
+              paddingLeft: 8,
+            }}
+          >
+            <Text
+              style={{ fontWeight: "bold", color: "#333", marginBottom: 4 }}
+            >
+              {timeSlot}
+            </Text>
+
+            {/* 해당 시간대 일정 */}
+            {data.schedules.map((schedule, idx) => (
+              <View
+                key={`schedule-${idx}`}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  marginBottom: 4,
+                }}
+              >
+                <Ionicons
+                  name="calendar-outline"
+                  size={14}
+                  color="#666"
+                  style={{ marginRight: 4 }}
+                />
+                <Text style={{ color: "#555" }}>
+                  {schedule.startTime} - {schedule.endTime} {schedule.task}
+                </Text>
+              </View>
+            ))}
+
+            {/* 해당 시간대 공부 세션 */}
+            {data.studySessions.map((session, idx) => (
+              <View
+                key={`study-${idx}`}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  marginBottom: 4,
+                }}
+              >
+                <Ionicons
+                  name="book-outline"
+                  size={14}
+                  color="#50cebb"
+                  style={{ marginRight: 4 }}
+                />
+                <Text style={{ color: "#555" }}>
+                  {session.subject || "공부"} (
+                  {formatLongTime(session.duration)})
+                </Text>
+              </View>
+            ))}
+          </View>
+        ))}
+    </View>
+  );
+};
+
+/**
+ * 자동 리포트 알림 정보 카드
+ */
+const AutomaticReportInfoCard = ({
+  isSubscribed,
+  activeTab,
+  notificationsSetup,
+}) => {
+  if (!isSubscribed || activeTab === REPORT_TYPES.DAILY) {
+    return null;
+  }
+
+  // 주간/월간에 따른 다른 내용
+  const title =
+    activeTab === REPORT_TYPES.WEEKLY
+      ? "주간 상세 리포트 자동 생성"
+      : "월간 상세 리포트 자동 생성";
+
+  const message =
+    activeTab === REPORT_TYPES.WEEKLY
+      ? "매주 일요일 밤 9시에 자동으로 상세 분석 리포트가 생성됩니다. 지난 주의 활동을 종합적으로 분석한 보고서를 확인하세요."
+      : "매월 마지막 날 밤 9시에 자동으로 상세 분석 리포트가 생성됩니다. 한 달간의 활동을 심층 분석한 보고서가 저장됩니다.";
+
+  return (
+    <View style={additionalStyles.notificationCard}>
+      <View style={additionalStyles.notificationHeader}>
+        <Ionicons name="notifications" size={20} color="#FFB74D" />
+        <Text style={additionalStyles.notificationTitle}>{title}</Text>
+      </View>
+      <Text style={additionalStyles.notificationMessage}>{message}</Text>
+      <Text style={additionalStyles.notificationHint}>
+        {notificationsSetup
+          ? "알림이 설정되어 있습니다. 새 리포트가 생성되면 자동으로 알려드립니다."
+          : "알림 설정에 문제가 있습니다. 앱을 재시작하거나 설정을 확인해주세요."}
+      </Text>
+    </View>
+  );
+};
+
+/**
+ * 피드백 화면 메인 컴포넌트
+ */
+const AIFeedbackScreen = () => {
+  // 컨텍스트에서 데이터 가져오기
+  const {
+    schedules = {},
+    tasks = {},
+    aiReports = {},
+    generateAIFeedback,
+    selectedDate,
+    earnedBadges,
+    setSelectedDate,
+    studySessions = {},
+    goalTargets = [],
+  } = usePlanner() || {};
+
+  // 구독 상태
+  const { isSubscribed } = useSubscription();
+
+  // 포인트 및 진행 정보
+  const { points } = useProgress();
+
+  // 상태 관리
+  const [activeTab, setActiveTab] = useState(REPORT_TYPES.DAILY);
+  const [isLoading, setIsLoading] = useState(false);
+  const [currentReport, setCurrentReport] = useState(null);
+  const [lastUpdateTime, setLastUpdateTime] = useState(new Date());
+  const [activeCategory, setActiveCategory] = useState("all");
+  const [savedWeeklyReports, setSavedWeeklyReports] = useState({});
+  const [savedMonthlyReports, setSavedMonthlyReports] = useState({});
+  const [notificationsSetup, setNotificationsSetup] = useState(false);
+
+  // 참조
+  const autoRefreshTimer = useRef(null);
+  const initializedRef = useRef(false);
+  const navigation = useNavigation();
+
+  // 구독 페이지로 이동
+  const handleUpgrade = useCallback(() => {
+    navigation.navigate("Subscription");
+  }, [navigation]);
+
+  // 저장된 리포트 로드
+  const loadSavedReports = useCallback(async () => {
+    try {
+      const weeklyReports = await EnhancedFeedbackService.getSavedAIReports(
+        REPORT_TYPES.WEEKLY
+      );
+      const monthlyReports = await EnhancedFeedbackService.getSavedAIReports(
+        REPORT_TYPES.MONTHLY
+      );
+
+      setSavedWeeklyReports(weeklyReports);
+      setSavedMonthlyReports(monthlyReports);
+
+      // 알림 설정 상태 확인
+      const notificationsStatus = await AsyncStorage.getItem(
+        STORAGE_KEYS.NOTIFICATIONS_SETUP
+      );
+      setNotificationsSetup(notificationsStatus === "true");
+
+      console.log(
+        `${Object.keys(weeklyReports).length}개의 주간 리포트와 ${
+          Object.keys(monthlyReports).length
+        }개의 월간 리포트를 로드했습니다.`
+      );
+    } catch (error) {
+      console.error("저장된 리포트 로드 오류:", error);
+    }
+  }, []);
+
+  // 리포트 스케줄링 설정
+  const setupReportScheduling = useCallback(async () => {
+    // 이미 초기화되었으면 중복 실행 방지
+    if (initializedRef.current) {
+      console.log("알림 설정이 이미 초기화되었습니다");
+      return;
+    }
+
+    // 알림 상태 및 구독 상태 확인
+    try {
+      const notificationStatus = await AsyncStorage.getItem(
+        STORAGE_KEYS.NOTIFICATIONS_SETUP
+      );
+      const isAlreadySetup = notificationStatus === "true";
+
+      // 설정 상태와 구독 상태가 일치하면 다시 설정할 필요 없음
+      if (isAlreadySetup && isSubscribed) {
+        setNotificationsSetup(true);
+        initializedRef.current = true;
+        return;
+      }
+    } catch (error) {
+      console.error("알림 설정 상태 확인 오류:", error);
+    }
+
+    // 리포트 스케줄링 업데이트
+    const success = await EnhancedFeedbackService.updateReportScheduling(
+      isSubscribed
+    );
+    setNotificationsSetup(success);
+
+    if (success && isSubscribed) {
+      ToastEventSystem.showToast(
+        "주간 및 월간 상세 리포트 알림이 설정되었습니다",
+        3000
+      );
+    }
+
+    // 초기화 완료 표시
+    initializedRef.current = true;
+  }, [isSubscribed]);
+
+  // 자동 갱신 타이머 설정
+  const setupAutoRefresh = useCallback(() => {
+    // 기존 타이머 해제
     if (autoRefreshTimer.current) {
       clearTimeout(autoRefreshTimer.current);
     }
 
-    // 각 리포트 유형에 따른 갱신 주기 설정 (ms)
-    const refreshIntervals = {
-      daily: 5 * 60 * 1000, // 5분
-      weekly: 24 * 60 * 60 * 1000, // 1일
-      monthly: 7 * 24 * 60 * 60 * 1000, // 1주
-    };
-
     console.log(
       `${activeTab} 리포트 자동 갱신 타이머 설정: ${
-        refreshIntervals[activeTab] / 60000
-      }분 후 갱신`
+        AUTO_REFRESH_INTERVALS[activeTab] / 60000
+      }분`
     );
 
-    // 현재 탭에 맞는 타이머 설정
+    // 현재 탭에 맞는 새 타이머 설정
     autoRefreshTimer.current = setTimeout(() => {
-      console.log(`${activeTab} 리포트 자동 갱신 실행`);
-      handleGenerateFeedback(false); // 자동 갱신은 항상 기본 분석 사용
-    }, refreshIntervals[activeTab]);
-  };
+      console.log(`${activeTab} 리포트 자동 갱신 중`);
+      handleGenerateFeedback(false); // 자동 갱신은 기본 분석만
+    }, AUTO_REFRESH_INTERVALS[activeTab]);
+  }, [activeTab, handleGenerateFeedback]);
 
-  // Load report data
+  // 리포트 데이터 로드
   const loadReportData = useCallback(async () => {
     setIsLoading(true);
 
     try {
-      // 데이터 유효성 확인
-      if (!schedules || !tasks || !studySessions) {
-        console.warn("필요한 데이터가 아직 로드되지 않았습니다.");
+      if (!schedules || !tasks) {
+        console.warn("필요한 데이터가 아직 로드되지 않았습니다");
         setTimeout(loadReportData, 500); // 0.5초 후 재시도
         return;
       }
 
-      console.log("리포트 데이터 로드 시작:", activeTab, selectedDate);
+      console.log("리포트 데이터 로드 중:", activeTab, selectedDate);
       let report = null;
 
+      // 먼저 메모리에서 기존 리포트 찾기
       if (aiReports && Object.keys(aiReports).length > 0) {
-        if (activeTab === "daily") {
+        if (activeTab === REPORT_TYPES.DAILY) {
           report = aiReports[selectedDate];
-        } else if (activeTab === "weekly") {
+        } else if (activeTab === REPORT_TYPES.WEEKLY) {
           const weekKey = `week-${format(
             new Date(selectedDate),
             "yyyy-MM-dd"
           )}`;
           report = aiReports[weekKey];
-        } else if (activeTab === "monthly") {
+        } else if (activeTab === REPORT_TYPES.MONTHLY) {
           const monthKey = `month-${format(new Date(selectedDate), "yyyy-MM")}`;
           report = aiReports[monthKey];
         }
       }
 
+      // 메모리에 없으면 스토리지에서 리포트 로드 시도
+      if (
+        !report &&
+        (activeTab === REPORT_TYPES.WEEKLY ||
+          activeTab === REPORT_TYPES.MONTHLY)
+      ) {
+        let savedReports;
+        let reportKey;
+
+        if (activeTab === REPORT_TYPES.WEEKLY) {
+          // 주간 키 계산
+          const date = new Date(selectedDate);
+          const year = date.getFullYear();
+          const weekNumber = Math.ceil(
+            (date.getDate() + 6 - date.getDay()) / 7
+          );
+          reportKey = `${year}-W${weekNumber.toString().padStart(2, "0")}`;
+          savedReports = savedWeeklyReports;
+        } else {
+          // 월간 키 계산
+          reportKey = format(new Date(selectedDate), "yyyy-MM");
+          savedReports = savedMonthlyReports;
+        }
+
+        if (savedReports && savedReports[reportKey]) {
+          report = savedReports[reportKey];
+          console.log(`저장된 ${activeTab} 리포트 로드: ${reportKey}`);
+        }
+      }
+
+      // 리포트가 여전히 없으면 새로 생성
       if (!report) {
-        // Generate new report if none exists, but avoid the circular dependency
         if (generateAIFeedback) {
+          // 모든 사용자에게 기본 분석 생성
           report = await generateAIFeedback(
             selectedDate,
             activeTab,
-            false,
-            isPremiumUser
+            false, // 초기 생성에는 상세 분석 사용 안 함
+            isSubscribed // 구독 상태 전달
           );
 
           if (report) {
@@ -270,35 +635,84 @@ const AIFeedbackScreen = () => {
         setLastUpdateTime(new Date());
       }
     } catch (error) {
-      console.error("Error loading report data:", error);
+      console.error("리포트 데이터 로드 오류:", error);
+      ToastEventSystem.showToast("데이터 로드 중 오류가 발생했습니다", 2000);
     } finally {
       setIsLoading(false);
     }
-  }, [aiReports, selectedDate, activeTab, generateAIFeedback, isPremiumUser]);
+  }, [
+    aiReports,
+    selectedDate,
+    activeTab,
+    generateAIFeedback,
+    isSubscribed,
+    schedules,
+    tasks,
+    savedWeeklyReports,
+    savedMonthlyReports,
+  ]);
 
-  // Generate feedback
+  // 피드백 생성 핸들러
   const handleGenerateFeedback = useCallback(
     async (useAI = false) => {
+      // 상세 분석에 대한 구독 확인
+      if (activeTab !== REPORT_TYPES.DAILY && useAI && !isSubscribed) {
+        ToastEventSystem.showToast("상세 분석은 구독자 전용 기능입니다", 2000);
+        handleUpgrade();
+        return;
+      }
+
       setIsLoading(true);
       try {
         if (!generateAIFeedback) {
-          throw new Error("generateAIFeedback function not available");
+          throw new Error("generateAIFeedback 함수를 사용할 수 없습니다");
         }
 
+        // 리포트 생성
         const report = await generateAIFeedback(
           selectedDate,
           activeTab,
           useAI,
-          isPremiumUser
+          isSubscribed
         );
 
         if (report) {
           setCurrentReport(report);
           setLastUpdateTime(new Date());
-          // Don't call setupAutoRefresh here to break circular dependency
+
+          // 상세 분석 리포트 저장 (주간 및 월간)
+          if (
+            useAI &&
+            (activeTab === REPORT_TYPES.WEEKLY ||
+              activeTab === REPORT_TYPES.MONTHLY)
+          ) {
+            // EnhancedFeedbackService의 리포트 저장 함수 사용
+            await EnhancedFeedbackService.saveReport(
+              selectedDate,
+              activeTab,
+              report
+            );
+
+            // 저장된 리포트 다시 로드
+            const updatedReports =
+              await EnhancedFeedbackService.getSavedAIReports(activeTab);
+            if (activeTab === REPORT_TYPES.WEEKLY) {
+              setSavedWeeklyReports(updatedReports);
+            } else {
+              setSavedMonthlyReports(updatedReports);
+            }
+
+            // 확인 메시지 표시
+            ToastEventSystem.showToast(
+              `${
+                activeTab === REPORT_TYPES.WEEKLY ? "주간" : "월간"
+              } 상세 리포트가 저장되었습니다`,
+              2000
+            );
+          }
         }
       } catch (error) {
-        console.error("Error generating report:", error);
+        console.error("리포트 생성 오류:", error);
         Alert.alert(
           "오류 발생",
           "리포트 생성 중 문제가 발생했습니다. 다시 시도해주세요."
@@ -307,45 +721,81 @@ const AIFeedbackScreen = () => {
         setIsLoading(false);
       }
     },
-    [
-      selectedDate,
-      activeTab,
-      isPremiumUser,
-      generateAIFeedback,
-      // Remove setupAutoRefresh and updateAchievementBadges from dependencies
-    ]
+    [activeTab, selectedDate, isSubscribed, generateAIFeedback, handleUpgrade]
   );
 
-  // Tab change handler
-  const handleTabChange = useCallback((tabName) => {
-    setActiveTab(tabName);
-  }, []);
+  // 탭 변경 핸들러
+  const handleTabChange = useCallback(
+    (tabName) => {
+      // 모든 탭으로 전환 가능
+      setActiveTab(tabName);
 
-  // Format date utility function
-  const formatLastUpdateTime = useCallback((date) => {
-    return format(date, "yyyy년 MM월 dd일 HH:mm");
-  }, []);
+      // 비구독자가 주간/월간 탭 선택 시 알림
+      if (
+        (tabName === REPORT_TYPES.WEEKLY || tabName === REPORT_TYPES.MONTHLY) &&
+        !isSubscribed
+      ) {
+        ToastEventSystem.showToast(
+          `${
+            tabName === REPORT_TYPES.WEEKLY ? "주간" : "월간"
+          } 리포트는 일부 기능만 제공됩니다`,
+          2000
+        );
+      }
+    },
+    [isSubscribed]
+  );
 
-  // Weekly report extra content
+  // 날짜 포맷 유틸리티
+  const formatLastUpdateTime = useCallback(
+    (date) => format(date, "yyyy년 MM월 dd일 HH:mm"),
+    []
+  );
+
+  // 컴포넌트 마운트 시 초기화
+  useEffect(() => {
+    // 저장된 리포트 로드
+    loadSavedReports();
+
+    // 리포트 스케줄링 설정 (한 번만)
+    if (!initializedRef.current) {
+      setupReportScheduling();
+    }
+
+    // 언마운트 시 타이머 정리
+    return () => {
+      if (autoRefreshTimer.current) {
+        clearTimeout(autoRefreshTimer.current);
+      }
+    };
+  }, [loadSavedReports, setupReportScheduling]);
+
+  // 탭이나 날짜 변경 시 리포트 데이터 로드
+  useEffect(() => {
+    loadReportData();
+    setupAutoRefresh();
+  }, [selectedDate, activeTab, isSubscribed, loadReportData, setupAutoRefresh]);
+
+  // 주간 리포트 추가 콘텐츠 렌더링
   const renderWeeklyExtraContent = useMemo(() => {
-    if (activeTab !== "weekly" || !currentReport) {
+    if (activeTab !== REPORT_TYPES.WEEKLY || !currentReport) {
       return null;
     }
 
     return (
       <View style={styles.weeklyExtraContainer}>
-        {/* Study time chart */}
+        {/* 공부 시간 차트 */}
         {currentReport.dailyStudyTime && (
           <WeeklyStudyChart dailyStudyTime={currentReport.dailyStudyTime} />
         )}
 
-        {/* Weekly theme section */}
+        {/* 주간 테마 섹션 - 프리미엄 기능 */}
         <CollapsibleCard
           title="이번 주 테마"
           icon="flash"
           borderColor={THEME_COLORS.premium}
         >
-          {isPremiumUser ? (
+          {isSubscribed ? (
             <>
               <Text style={styles.themeText}>
                 "{currentReport.weeklyTheme || "데이터 분석 중..."}"
@@ -360,9 +810,10 @@ const AIFeedbackScreen = () => {
             </>
           ) : (
             <View style={styles.premiumPreviewContainer}>
-              <Text style={styles.previewText} numberOfLines={2}>
-                AI가 당신의 학습 패턴을 분석하여 이번 주의 특징과 테마를
-                도출합니다. 앞으로의 집중 영역도 추천해 드립니다.
+              <Text style={styles.previewText} numberOfLines={3}>
+                상세 분석을 통해 당신의 학습 패턴을 분석하여{"\n"}이번 주의
+                특징과 테마를 도출합니다.{"\n"}앞으로의 집중 영역도 추천해
+                드립니다.
               </Text>
               <View style={styles.previewOverlay}>
                 <TouchableOpacity
@@ -378,20 +829,20 @@ const AIFeedbackScreen = () => {
           )}
         </CollapsibleCard>
 
-        {/* Schedule insights section */}
+        {/* 일정 인사이트 섹션 - 프리미엄 기능 */}
         <CollapsibleCard
           title="일정 인사이트"
           icon="calendar"
           borderColor={THEME_COLORS.info}
         >
-          {isPremiumUser ? (
+          {isSubscribed ? (
             <>
               <Text style={styles.scheduleInsightsText}>
                 {currentReport.scheduleInsights ||
                   "데이터를 분석하고 있습니다..."}
               </Text>
 
-              {/* Schedule type distribution */}
+              {/* 일정 유형 분포 */}
               {currentReport.scheduleTypeCount && (
                 <View style={styles.scheduleTypesContainer}>
                   <Text style={styles.scheduleTypesTitle}>일정 유형 분포</Text>
@@ -437,9 +888,9 @@ const AIFeedbackScreen = () => {
           ) : (
             <View style={styles.premiumPreviewContainer}>
               <Text style={styles.previewText} numberOfLines={3}>
-                AI가 당신의 일정 패턴을 분석하여 생산성을 높일 수 있는 맞춤형
-                인사이트를 제공합니다. 일정 유형별 분포와 균형에 대한 조언도
-                확인하세요.
+                상세 분석을 통해 당신의 일정 패턴을 분석하여 생산성을 높일 수
+                있는 맞춤형 인사이트를 제공합니다. 일정 유형별 분포와 균형에
+                대한 조언도 확인하세요.
               </Text>
               <View style={styles.previewOverlay}>
                 <TouchableOpacity
@@ -456,20 +907,12 @@ const AIFeedbackScreen = () => {
         </CollapsibleCard>
       </View>
     );
-  }, [
-    activeTab,
-    currentReport,
-    isPremiumUser,
-    handleUpgrade,
-    THEME_COLORS,
-    styles,
-    getColor,
-  ]);
+  }, [activeTab, currentReport, isSubscribed, handleUpgrade]);
 
-  // Monthly report extra content
+  // 월간 리포트 추가 콘텐츠 렌더링
   const renderMonthlyExtraContent = useMemo(() => {
     if (
-      activeTab !== "monthly" ||
+      activeTab !== REPORT_TYPES.MONTHLY ||
       !currentReport ||
       !currentReport.monthlyOverview
     ) {
@@ -478,13 +921,14 @@ const AIFeedbackScreen = () => {
 
     return (
       <View style={styles.monthlyExtraContainer}>
-        {/* Subject study time chart */}
+        {/* 과목별 공부 시간 차트 */}
         {currentReport.subjectAnalysis && (
           <MonthlySubjectChart
             subjectAnalysis={currentReport.subjectAnalysis}
           />
         )}
 
+        {/* 월간 개요 - 프리미엄 기능 */}
         <CollapsibleCard title="월간 개요" icon="analytics">
           <Text style={styles.overviewText}>
             {currentReport.monthlyOverview ||
@@ -492,163 +936,232 @@ const AIFeedbackScreen = () => {
           </Text>
         </CollapsibleCard>
 
+        {/* 월간 테마 - 프리미엄 기능 */}
         <CollapsibleCard title="이번 달 테마" icon="star" borderColor="#FFD700">
-          <Text style={styles.themeText}>
-            "{currentReport.monthlyTheme || "데이터 분석 중..."}"
-          </Text>
+          {isSubscribed ? (
+            <>
+              <Text style={styles.themeText}>
+                "{currentReport.monthlyTheme || "데이터 분석 중..."}"
+              </Text>
 
-          <View style={styles.focusSection}>
-            <Text style={styles.focusTitle}>다음 달 집중 포인트</Text>
-            <Text style={styles.focusText}>
-              {currentReport.nextMonthFocus ||
-                "충분한 데이터가 쌓이면 제안해 드릴게요."}
-            </Text>
-          </View>
+              <View style={styles.focusSection}>
+                <Text style={styles.focusTitle}>다음 달 집중 포인트</Text>
+                <Text style={styles.focusText}>
+                  {currentReport.nextMonthFocus ||
+                    "충분한 데이터가 쌓이면 제안해 드릴게요."}
+                </Text>
+              </View>
+            </>
+          ) : (
+            <View style={styles.premiumPreviewContainer}>
+              <Text style={styles.previewText} numberOfLines={3}>
+                상세 분석을 통해 당신의 월간 활동 데이터를 종합하여 특별한
+                테마를 도출하고, 다음 달을 위한 핵심 집중 영역을 제안합니다.
+              </Text>
+              <View style={styles.previewOverlay}>
+                <TouchableOpacity
+                  style={styles.upgradeButton}
+                  onPress={handleUpgrade}
+                >
+                  <Text style={styles.upgradeButtonText}>
+                    프리미엄으로 확인하기
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
         </CollapsibleCard>
 
-        {currentReport.productivityScore && (
-          <View style={styles.scoreCard}>
-            <Text style={styles.scoreTitle}>생산성 점수</Text>
-            <View style={styles.scoreContainer}>
-              <Text style={styles.scoreValue}>
-                {currentReport.productivityScore}
+        {/* 생산성 점수 - 프리미엄 기능 */}
+        <CollapsibleCard
+          title="생산성 점수"
+          icon="analytics"
+          borderColor={THEME_COLORS.success}
+        >
+          {isSubscribed && currentReport.productivityScore ? (
+            <>
+              <View style={styles.scoreContainer}>
+                <Text style={styles.scoreValue}>
+                  {currentReport.productivityScore}
+                </Text>
+                <Text style={styles.scoreMax}>/100</Text>
+              </View>
+              <View style={styles.scoreBarContainer}>
+                <View
+                  style={[
+                    styles.scoreBar,
+                    { width: `${currentReport.productivityScore}%` },
+                  ]}
+                />
+              </View>
+            </>
+          ) : (
+            <View style={styles.premiumPreviewContainer}>
+              <Text style={styles.previewText} numberOfLines={3}>
+                상세 분석을 통해 당신의 월간 활동을 종합 평가하여 100점 만점의
+                생산성 점수를 제공합니다. 월간 목표 달성도, 일정 완료율, 학습
+                시간 등을 종합적으로 분석하여 객관적인 지표를 확인할 수
+                있습니다.
               </Text>
-              <Text style={styles.scoreMax}>/100</Text>
-            </View>
-            <View style={styles.scoreBarContainer}>
-              <View
-                style={[
-                  styles.scoreBar,
-                  { width: `${currentReport.productivityScore}%` },
-                ]}
-              />
-            </View>
-          </View>
-        )}
-
-        {/* Schedule pattern insights section */}
-        {currentReport.schedulePatternInsights && (
-          <CollapsibleCard
-            title="일정 패턴 분석"
-            icon="analytics"
-            borderColor={THEME_COLORS.success}
-          >
-            <Text style={styles.schedulePatternText}>
-              {currentReport.schedulePatternInsights}
-            </Text>
-
-            {/* Schedule distribution by day */}
-            {currentReport.schedulesByDay &&
-              typeof currentReport.schedulesByDay === "object" &&
-              Object.keys(currentReport.schedulesByDay).length > 0 && (
-                <View style={styles.dayDistributionContainer}>
-                  <Text style={styles.dayDistributionTitle}>
-                    요일별 일정 분포
+              <View style={styles.previewOverlay}>
+                <TouchableOpacity
+                  style={styles.upgradeButton}
+                  onPress={handleUpgrade}
+                >
+                  <Text style={styles.upgradeButtonText}>
+                    프리미엄으로 확인하기
                   </Text>
-                  <View style={styles.dayDistributionChart}>
-                    {["월", "화", "수", "목", "금", "토", "일"].map((day) => {
-                      const count = currentReport.schedulesByDay[day] || 0;
-                      const maxCount = Math.max(
-                        ...Object.values(currentReport.schedulesByDay).map(
-                          (v) => v || 0
-                        )
-                      );
-                      const percentage =
-                        maxCount > 0 ? (count / maxCount) * 100 : 0;
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        </CollapsibleCard>
 
-                      return (
-                        <View key={day} style={styles.dayColumn}>
-                          <View style={styles.dayBarContainer}>
-                            <View
-                              style={[
-                                styles.dayBar,
-                                { height: `${percentage}%` },
-                              ]}
-                            />
-                          </View>
-                          <Text style={styles.dayLabel}>{day}</Text>
-                          <Text style={styles.dayCount}>{count}</Text>
-                        </View>
-                      );
-                    })}
-                  </View>
-                </View>
-              )}
+        {/* 일정 패턴 분석 - 프리미엄 기능 */}
+        <CollapsibleCard
+          title="일정 패턴 분석"
+          icon="analytics"
+          borderColor={THEME_COLORS.success}
+        >
+          {isSubscribed ? (
+            <>
+              <Text style={styles.schedulePatternText}>
+                {currentReport.schedulePatternInsights ||
+                  "데이터를 분석하고 있습니다..."}
+              </Text>
 
-            {/* Schedule distribution by time slot */}
-            {currentReport.schedulesByTimeSlot &&
-              typeof currentReport.schedulesByTimeSlot === "object" &&
-              Object.keys(currentReport.schedulesByTimeSlot).length > 0 && (
-                <View style={styles.timeSlotContainer}>
-                  <Text style={styles.timeSlotTitle}>시간대별 일정 분포</Text>
-                  <View style={styles.timeSlotChart}>
-                    {Object.entries(currentReport.schedulesByTimeSlot).map(
-                      ([timeSlot, count]) => {
-                        const total = Object.values(
-                          currentReport.schedulesByTimeSlot
-                        ).reduce((sum, val) => sum + (val || 0), 0);
+              {/* 요일별 일정 분포 */}
+              {currentReport.schedulesByDay &&
+                typeof currentReport.schedulesByDay === "object" &&
+                Object.keys(currentReport.schedulesByDay).length > 0 && (
+                  <View style={styles.dayDistributionContainer}>
+                    <Text style={styles.dayDistributionTitle}>
+                      요일별 일정 분포
+                    </Text>
+                    <View style={styles.dayDistributionChart}>
+                      {["월", "화", "수", "목", "금", "토", "일"].map((day) => {
+                        const count = currentReport.schedulesByDay[day] || 0;
+                        const maxCount = Math.max(
+                          ...Object.values(currentReport.schedulesByDay).map(
+                            (v) => v || 0
+                          )
+                        );
                         const percentage =
-                          total > 0 ? Math.round((count / total) * 100) : 0;
+                          maxCount > 0 ? (count / maxCount) * 100 : 0;
 
                         return (
-                          <View key={timeSlot} style={styles.timeSlotItem}>
-                            <View style={styles.timeSlotHeader}>
-                              <Text style={styles.timeSlotName}>
-                                {timeSlot}
-                              </Text>
-                              <Text style={styles.timeSlotCount}>
-                                {`${count || 0}개 (${percentage || 0}%)`}
-                              </Text>
-                            </View>
-                            <View style={styles.timeSlotBarContainer}>
+                          <View key={day} style={styles.dayColumn}>
+                            <View style={styles.dayBarContainer}>
                               <View
                                 style={[
-                                  styles.timeSlotBar,
-                                  {
-                                    width: `${percentage}%`,
-                                    backgroundColor: getColor(
-                                      "timeSlot",
-                                      timeSlot
-                                    ),
-                                  },
+                                  styles.dayBar,
+                                  { height: `${percentage}%` },
                                 ]}
                               />
                             </View>
+                            <Text style={styles.dayLabel}>{day}</Text>
+                            <Text style={styles.dayCount}>{count}</Text>
                           </View>
                         );
-                      }
-                    )}
+                      })}
+                    </View>
                   </View>
-                </View>
-              )}
+                )}
 
-            {/* Frequently recurring tasks */}
-            {currentReport.frequentTasks &&
-              Array.isArray(currentReport.frequentTasks) &&
-              currentReport.frequentTasks.length > 0 && (
-                <View style={styles.frequentTasksContainer}>
-                  <Text style={styles.frequentTasksTitle}>
-                    자주 반복되는 일정
-                  </Text>
-                  <View style={styles.frequentTasksList}>
-                    {currentReport.frequentTasks.map((task, index) => (
-                      <View key={index} style={styles.frequentTaskItem}>
-                        <Text style={styles.frequentTaskName}>
-                          {task && task.task ? task.task : "-"}
-                        </Text>
-                        <View style={styles.frequentTaskCountContainer}>
-                          <Text style={styles.frequentTaskCount}>
-                            {task && task.count ? `${task.count}회` : "0회"}
+              {/* 시간대별 일정 분포 */}
+              {currentReport.schedulesByTimeSlot &&
+                typeof currentReport.schedulesByTimeSlot === "object" &&
+                Object.keys(currentReport.schedulesByTimeSlot).length > 0 && (
+                  <View style={styles.timeSlotContainer}>
+                    <Text style={styles.timeSlotTitle}>시간대별 일정 분포</Text>
+                    <View style={styles.timeSlotChart}>
+                      {Object.entries(currentReport.schedulesByTimeSlot).map(
+                        ([timeSlot, count]) => {
+                          const total = Object.values(
+                            currentReport.schedulesByTimeSlot
+                          ).reduce((sum, val) => sum + (val || 0), 0);
+                          const percentage =
+                            total > 0 ? Math.round((count / total) * 100) : 0;
+
+                          return (
+                            <View key={timeSlot} style={styles.timeSlotItem}>
+                              <View style={styles.timeSlotHeader}>
+                                <Text style={styles.timeSlotName}>
+                                  {timeSlot}
+                                </Text>
+                                <Text style={styles.timeSlotCount}>
+                                  {`${count || 0}개 (${percentage || 0}%)`}
+                                </Text>
+                              </View>
+                              <View style={styles.timeSlotBarContainer}>
+                                <View
+                                  style={[
+                                    styles.timeSlotBar,
+                                    {
+                                      width: `${percentage}%`,
+                                      backgroundColor: getColor(
+                                        "timeSlot",
+                                        timeSlot
+                                      ),
+                                    },
+                                  ]}
+                                />
+                              </View>
+                            </View>
+                          );
+                        }
+                      )}
+                    </View>
+                  </View>
+                )}
+
+              {/* 자주 반복되는 일정 */}
+              {currentReport.frequentTasks &&
+                Array.isArray(currentReport.frequentTasks) &&
+                currentReport.frequentTasks.length > 0 && (
+                  <View style={styles.frequentTasksContainer}>
+                    <Text style={styles.frequentTasksTitle}>
+                      자주 반복되는 일정
+                    </Text>
+                    <View style={styles.frequentTasksList}>
+                      {currentReport.frequentTasks.map((task, index) => (
+                        <View key={index} style={styles.frequentTaskItem}>
+                          <Text style={styles.frequentTaskName}>
+                            {task && task.task ? task.task : "-"}
                           </Text>
+                          <View style={styles.frequentTaskCountContainer}>
+                            <Text style={styles.frequentTaskCount}>
+                              {task && task.count ? `${task.count}회` : "0회"}
+                            </Text>
+                          </View>
                         </View>
-                      </View>
-                    ))}
+                      ))}
+                    </View>
                   </View>
-                </View>
-              )}
-          </CollapsibleCard>
-        )}
+                )}
+            </>
+          ) : (
+            <View style={styles.premiumPreviewContainer}>
+              <Text style={styles.previewText} numberOfLines={3}>
+                상세 분석을 통해 당신의 일정 패턴을 심층 분석하여 요일별,
+                시간대별 생산성 패턴과 최적의 일정 배치를 제안합니다. 생산성을
+                극대화할 수 있는 맞춤형 인사이트를 확인하세요.
+              </Text>
+              <View style={styles.previewOverlay}>
+                <TouchableOpacity
+                  style={styles.upgradeButton}
+                  onPress={handleUpgrade}
+                >
+                  <Text style={styles.upgradeButtonText}>
+                    프리미엄으로 확인하기
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        </CollapsibleCard>
 
+        {/* 활동 통계 */}
         <View style={styles.activityRatioCard}>
           <Text style={styles.activityRatioTitle}>월간 활동 통계</Text>
           <View style={styles.activityStats}>
@@ -674,10 +1187,10 @@ const AIFeedbackScreen = () => {
         </View>
       </View>
     );
-  }, [activeTab, currentReport, THEME_COLORS, styles, getColor]);
+  }, [activeTab, currentReport, isSubscribed, handleUpgrade]);
 
-  // Render report content
-  const renderReport = useMemo(() => {
+  // 리포트 렌더링 함수
+  const renderReport = () => {
     if (isLoading) {
       return (
         <View style={styles.loadingContainer}>
@@ -707,16 +1220,16 @@ const AIFeedbackScreen = () => {
       <View style={styles.reportContainer}>
         <View style={styles.reportHeader}>
           <Text style={styles.reportTitle}>
-            {activeTab === "daily"
+            {activeTab === REPORT_TYPES.DAILY
               ? "일간 리포트"
-              : activeTab === "weekly"
+              : activeTab === REPORT_TYPES.WEEKLY
               ? "주간 리포트"
               : "월간 리포트"}
           </Text>
           <Text style={styles.reportDate}>
-            {activeTab === "daily"
+            {activeTab === REPORT_TYPES.DAILY
               ? format(new Date(selectedDate), "yyyy년 MM월 dd일")
-              : activeTab === "weekly"
+              : activeTab === REPORT_TYPES.WEEKLY
               ? `${format(
                   sub(new Date(selectedDate), {
                     days: new Date(selectedDate).getDay(),
@@ -731,270 +1244,202 @@ const AIFeedbackScreen = () => {
               : format(new Date(selectedDate), "yyyy년 MM월")}
           </Text>
 
-          {/* AI analysis badge */}
-          {currentReport && currentReport.isAIGenerated && (
+          {/* 비구독자용 제한 배지 */}
+          {(activeTab === REPORT_TYPES.WEEKLY ||
+            activeTab === REPORT_TYPES.MONTHLY) &&
+            !isSubscribed && (
+              <View style={additionalStyles.limitedBadge}>
+                <Text style={additionalStyles.limitedBadgeText}>
+                  제한된 기능
+                </Text>
+              </View>
+            )}
+
+          {/* 구독자용 상세 분석 배지 */}
+          {currentReport && currentReport.isAIGenerated && isSubscribed && (
             <View style={styles.aiBadge}>
-              <Text style={styles.aiBadgeText}>AI 분석</Text>
+              <Text style={styles.aiBadgeText}>상세 분석</Text>
             </View>
           )}
         </View>
 
-        {/* Daily report sections */}
-        {activeTab === "daily" && (
+        {/* 일간 리포트의 경우 일정 및 공부 섹션을 상단에 배치 */}
+        {activeTab === REPORT_TYPES.DAILY && (
           <>
-            {/* Chart */}
-            {studySessions && studySessions[selectedDate] && (
-              <DailyStudyChart studySessions={studySessions[selectedDate]} />
-            )}
+            {/* 일일 공부 세션 차트 */}
+            <DailyStudyChart studySessions={studySessions[selectedDate]} />
 
-            {/* 1. Goal status */}
-            <GoalSection />
-
-            {/* 3. Insights */}
-            <CollapsibleCard title="인사이트" icon="bulb-outline">
-              <Text style={styles.insightText}>
-                {currentReport.insights || "데이터 분석 중..."}
-              </Text>
-            </CollapsibleCard>
-
-            {/* Key statistics */}
-            <View style={styles.statsCard}>
-              <Text style={styles.statsTitle}>주요 통계</Text>
-              <View style={styles.statRow}>
-                <View style={styles.statItem}>
-                  <Text style={styles.statValue}>
-                    {currentReport.completionRate || "0"}%
-                  </Text>
-                  <Text style={styles.statLabel}>일정 완료율</Text>
-                </View>
-                <View style={styles.statItem}>
-                  <Text style={styles.statValue}>
-                    {currentReport.totalHours || "0"}시간
-                  </Text>
-                  <Text style={styles.statLabel}>총 활동시간</Text>
-                </View>
-                <View style={styles.statItem}>
-                  <Text style={styles.statValue}>
-                    {currentReport.mostProductiveTime || "N/A"}
-                  </Text>
-                  <Text style={styles.statLabel}>생산성 높은 시간</Text>
-                </View>
-              </View>
-            </View>
-
-            {/* Category analysis */}
-            {currentReport.subjectAnalysis &&
-              Object.keys(currentReport.subjectAnalysis).length > 0 && (
-                <CollapsibleCard title="카테고리별 분석" icon="pie-chart">
-                  <View style={styles.categoryList}>
-                    {Object.entries(currentReport.subjectAnalysis)
-                      .sort((a, b) => b[1] - a[1])
-                      .map(([category, seconds]) => {
-                        const hours = Math.round((seconds / 3600) * 10) / 10;
-                        const totalSeconds = Object.values(
-                          currentReport.subjectAnalysis
-                        ).reduce((sum, val) => sum + val, 0);
-                        const percentage =
-                          totalSeconds > 0
-                            ? Math.round((seconds / totalSeconds) * 100)
-                            : 0;
-
-                        return (
-                          <View key={category} style={styles.categoryItem}>
-                            <View style={styles.categoryHeader}>
-                              <Text style={styles.categoryName}>
-                                {category}
-                              </Text>
-                              <Text style={styles.categoryTime}>
-                                {hours}시간
-                              </Text>
-                            </View>
-                            <View style={styles.progressContainer}>
-                              <View
-                                style={[
-                                  styles.progressBar,
-                                  {
-                                    width: `${percentage}%`,
-                                    backgroundColor: getColor(
-                                      "category",
-                                      category
-                                    ),
-                                  },
-                                ]}
-                              />
-                            </View>
-                          </View>
-                        );
-                      })}
-                  </View>
-                </CollapsibleCard>
-              )}
-
-            {/* 4. Improvement suggestions */}
+            {/* 오늘의 일정 및 공부 컴포넌트 */}
             <CollapsibleCard
-              title="개선 제안"
-              icon="trending-up"
-              borderColor="#f0f8ff"
+              title="오늘의 일정 및 공부"
+              icon="today-outline"
+              borderColor="#50cebb"
+              initiallyExpanded={true}
             >
-              {/* General recommendations */}
-              <Text style={styles.recommendationText}>
-                {currentReport.recommendations ||
-                  "충분한 데이터가 쌓이면 제안을 드릴게요."}
-              </Text>
+              <TodayScheduleAndStudy
+                studySessions={studySessions}
+                schedules={schedules}
+                selectedDate={selectedDate}
+              />
             </CollapsibleCard>
+
+            {/* D-Day 상태 섹션 */}
+            <GoalSection goalTargets={goalTargets} />
           </>
         )}
 
-        {/* Weekly report additional content */}
+        {/* 자동 리포트 정보 (구독자용) */}
+        <AutomaticReportInfoCard
+          isSubscribed={isSubscribed}
+          activeTab={activeTab}
+          notificationsSetup={notificationsSetup}
+        />
+
+        {/* 주간 리포트 추가 콘텐츠 */}
         {renderWeeklyExtraContent}
 
-        {/* Monthly report additional content */}
+        {/* 월간 리포트 추가 콘텐츠 */}
         {renderMonthlyExtraContent}
 
-        {/* Weekly/monthly report common sections (shown only for non-daily reports) */}
-        {activeTab !== "daily" && (
-          <>
-            <CollapsibleCard title="인사이트" icon="bulb-outline">
-              <Text style={styles.insightText}>
-                {currentReport.insights || "데이터 분석 중..."}
-              </Text>
-            </CollapsibleCard>
+        {/* 모든 리포트 유형 공통 섹션 */}
+        <CollapsibleCard title="인사이트" icon="bulb-outline">
+          <Text style={styles.insightText}>
+            {currentReport.insights || "데이터 분석 중..."}
+          </Text>
+        </CollapsibleCard>
 
-            <View style={styles.statsCard}>
-              <Text style={styles.statsTitle}>주요 통계</Text>
-              <View style={styles.statRow}>
-                <View style={styles.statItem}>
-                  <Text style={styles.statValue}>
-                    {currentReport.completionRate || "0"}%
-                  </Text>
-                  <Text style={styles.statLabel}>일정 완료율</Text>
-                </View>
-                <View style={styles.statItem}>
-                  <Text style={styles.statValue}>
-                    {currentReport.totalHours || "0"}시간
-                  </Text>
-                  <Text style={styles.statLabel}>총 활동시간</Text>
-                </View>
-                {activeTab === "weekly" ? (
-                  <View style={styles.statItem}>
-                    <Text style={styles.statValue}>
-                      {currentReport.mostProductiveDay
-                        ? format(
-                            new Date(currentReport.mostProductiveDay),
-                            "EEE",
-                            {
-                              locale: ko,
-                            }
-                          )
-                        : "N/A"}
-                    </Text>
-                    <Text style={styles.statLabel}>최고 생산성 날짜</Text>
-                  </View>
-                ) : (
-                  <View style={styles.statItem}>
-                    <Text style={styles.statValue}>
-                      {currentReport.avgDailyHours || "0"}시간
-                    </Text>
-                    <Text style={styles.statLabel}>일평균 활동시간</Text>
-                  </View>
-                )}
-              </View>
+        {/* 주요 통계 */}
+        <View style={styles.statsCard}>
+          <Text style={styles.statsTitle}>주요 통계</Text>
+          <View style={styles.statRow}>
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>
+                {currentReport.completionRate || "0"}%
+              </Text>
+              <Text style={styles.statLabel}>일정 완료율</Text>
             </View>
-
-            {currentReport.subjectAnalysis &&
-              Object.keys(currentReport.subjectAnalysis).length > 0 && (
-                <CollapsibleCard title="카테고리별 분석" icon="pie-chart">
-                  <View style={styles.categoryList}>
-                    {Object.entries(currentReport.subjectAnalysis)
-                      .sort((a, b) => b[1] - a[1])
-                      .map(([category, seconds]) => {
-                        const hours = Math.round((seconds / 3600) * 10) / 10;
-                        const totalSeconds = Object.values(
-                          currentReport.subjectAnalysis
-                        ).reduce((sum, val) => sum + val, 0);
-                        const percentage =
-                          totalSeconds > 0
-                            ? Math.round((seconds / totalSeconds) * 100)
-                            : 0;
-
-                        return (
-                          <View key={category} style={styles.categoryItem}>
-                            <View style={styles.categoryHeader}>
-                              <Text style={styles.categoryName}>
-                                {category}
-                              </Text>
-                              <Text style={styles.categoryTime}>
-                                {hours}시간
-                              </Text>
-                            </View>
-                            <View style={styles.progressContainer}>
-                              <View
-                                style={[
-                                  styles.progressBar,
-                                  {
-                                    width: `${percentage}%`,
-                                    backgroundColor: getColor(
-                                      "category",
-                                      category
-                                    ),
-                                  },
-                                ]}
-                              />
-                            </View>
-                          </View>
-                        );
-                      })}
-                  </View>
-                </CollapsibleCard>
-              )}
-
-            {/* Daily progress for weekly report */}
-            {activeTab === "weekly" && currentReport.dailyCompletionRate && (
-              <CollapsibleCard title="일별 진행 상황" icon="calendar">
-                <View style={styles.weeklyChart}>
-                  {Object.entries(currentReport.dailyCompletionRate)
-                    .sort((a, b) => a[0].localeCompare(b[0]))
-                    .map(([date, rate]) => {
-                      const dayName = format(new Date(date), "EEE", {
-                        locale: ko,
-                      });
-                      return (
-                        <View key={date} style={styles.weeklyChartItem}>
-                          <Text style={styles.weeklyChartDay}>{dayName}</Text>
-                          <View style={styles.weeklyChartBarContainer}>
-                            <View
-                              style={[
-                                styles.weeklyChartBar,
-                                { height: `${rate}%` },
-                              ]}
-                            />
-                          </View>
-                          <Text style={styles.weeklyChartValue}>{rate}%</Text>
-                        </View>
-                      );
-                    })}
-                </View>
-              </CollapsibleCard>
-            )}
-
-            <CollapsibleCard
-              title={activeTab === "monthly" ? "장기적 개선 방향" : "개선 제안"}
-              icon="trending-up"
-              borderColor="#f0f8ff"
-            >
-              <Text style={styles.recommendationText}>
-                {activeTab === "monthly"
-                  ? currentReport.longTermRecommendations ||
-                    "충분한 데이터가 쌓이면 제안을 드릴게요."
-                  : currentReport.recommendations ||
-                    "충분한 데이터가 쌓이면 제안을 드릴게요."}
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>
+                {currentReport.totalHours || "0"}시간
               </Text>
-            </CollapsibleCard>
-          </>
-        )}
+              <Text style={styles.statLabel}>총 활동시간</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>
+                {activeTab === REPORT_TYPES.DAILY
+                  ? currentReport.mostProductiveTime || "N/A"
+                  : activeTab === REPORT_TYPES.WEEKLY
+                  ? currentReport.mostProductiveDay
+                    ? format(new Date(currentReport.mostProductiveDay), "EEE", {
+                        locale: ko,
+                      })
+                    : "N/A"
+                  : currentReport.avgDailyHours || "0"}
+                시간
+              </Text>
+              <Text style={styles.statLabel}>
+                {activeTab === REPORT_TYPES.DAILY
+                  ? "생산성 높은 시간"
+                  : activeTab === REPORT_TYPES.WEEKLY
+                  ? "최고 생산성 날짜"
+                  : "일평균 활동시간"}
+              </Text>
+            </View>
+          </View>
+        </View>
 
-        {/* Refresh button for daily report */}
-        {activeTab === "daily" && (
+        {/* 카테고리별 분석 */}
+        {currentReport.subjectAnalysis &&
+          Object.keys(currentReport.subjectAnalysis).length > 0 && (
+            <CollapsibleCard title="카테고리별 분석" icon="pie-chart">
+              <View style={styles.categoryList}>
+                {Object.entries(currentReport.subjectAnalysis)
+                  .sort((a, b) => b[1] - a[1])
+                  .map(([category, seconds]) => {
+                    const hours = Math.round((seconds / 3600) * 10) / 10;
+                    const totalSeconds = Object.values(
+                      currentReport.subjectAnalysis
+                    ).reduce((sum, val) => sum + val, 0);
+                    const percentage =
+                      totalSeconds > 0
+                        ? Math.round((seconds / totalSeconds) * 100)
+                        : 0;
+
+                    return (
+                      <View key={category} style={styles.categoryItem}>
+                        <View style={styles.categoryHeader}>
+                          <Text style={styles.categoryName}>{category}</Text>
+                          <Text style={styles.categoryTime}>{hours}시간</Text>
+                        </View>
+                        <View style={styles.progressContainer}>
+                          <View
+                            style={[
+                              styles.progressBar,
+                              {
+                                width: `${percentage}%`,
+                                backgroundColor: getColor("category", category),
+                              },
+                            ]}
+                          />
+                        </View>
+                      </View>
+                    );
+                  })}
+              </View>
+            </CollapsibleCard>
+          )}
+
+        {/* 주간 리포트의 일별 진행 상황 차트 */}
+        {activeTab === REPORT_TYPES.WEEKLY &&
+          currentReport.dailyCompletionRate && (
+            <CollapsibleCard title="일별 진행 상황" icon="calendar">
+              <View style={styles.weeklyChart}>
+                {Object.entries(currentReport.dailyCompletionRate)
+                  .sort((a, b) => a[0].localeCompare(b[0]))
+                  .map(([date, rate]) => {
+                    const dayName = format(new Date(date), "EEE", {
+                      locale: ko,
+                    });
+                    return (
+                      <View key={date} style={styles.weeklyChartItem}>
+                        <Text style={styles.weeklyChartDay}>{dayName}</Text>
+                        <View style={styles.weeklyChartBarContainer}>
+                          <View
+                            style={[
+                              styles.weeklyChartBar,
+                              { height: `${rate}%` },
+                            ]}
+                          />
+                        </View>
+                        <Text style={styles.weeklyChartValue}>{rate}%</Text>
+                      </View>
+                    );
+                  })}
+              </View>
+            </CollapsibleCard>
+          )}
+
+        {/* 개선 제안 */}
+        <CollapsibleCard
+          title={
+            activeTab === REPORT_TYPES.MONTHLY
+              ? "장기적 개선 방향"
+              : "개선 제안"
+          }
+          icon="trending-up"
+          borderColor="#f0f8ff"
+        >
+          <Text style={styles.recommendationText}>
+            {activeTab === REPORT_TYPES.MONTHLY
+              ? currentReport.longTermRecommendations ||
+                "충분한 데이터가 쌓이면 제안을 드릴게요."
+              : currentReport.recommendations ||
+                "충분한 데이터가 쌓이면 제안을 드릴게요."}
+          </Text>
+        </CollapsibleCard>
+
+        {/* 일간 리포트용 새로고침 버튼 */}
+        {activeTab === REPORT_TYPES.DAILY && (
           <TouchableOpacity
             style={styles.refreshButton}
             onPress={() => handleGenerateFeedback(false)}
@@ -1003,33 +1448,12 @@ const AIFeedbackScreen = () => {
           </TouchableOpacity>
         )}
 
-        {/* AI analysis button for weekly/monthly reports (premium) */}
-        {(activeTab === "weekly" || activeTab === "monthly") && (
-          <TouchableOpacity
-            style={[styles.aiButton, !isPremiumUser && styles.aiButtonDisabled]}
-            onPress={() =>
-              isPremiumUser ? handleGenerateFeedback(true) : handleUpgrade()
-            }
-          >
-            <Ionicons
-              name={isPremiumUser ? "flash" : "lock-closed"}
-              size={18}
-              color="#fff"
-            />
-            <Text style={styles.aiButtonText}>
-              {isPremiumUser
-                ? "AI 심층 분석 실행"
-                : "프리미엄으로 AI 분석 활성화"}
-            </Text>
-          </TouchableOpacity>
-        )}
-
-        {/* Auto-update info */}
+        {/* 자동 업데이트 정보 */}
         <View style={styles.autoUpdateContainer}>
           <Text style={styles.autoUpdateInfo}>
-            {activeTab === "daily"
+            {activeTab === REPORT_TYPES.DAILY
               ? "일간 리포트는 5분마다 자동으로 갱신됩니다."
-              : activeTab === "weekly"
+              : activeTab === REPORT_TYPES.WEEKLY
               ? "주간 리포트는 하루마다 자동으로 갱신됩니다."
               : "월간 리포트는 일주일마다 자동으로 갱신됩니다."}
           </Text>
@@ -1038,31 +1462,52 @@ const AIFeedbackScreen = () => {
           </Text>
         </View>
 
-        {/* Bottom spacer */}
+        {/* 상세 분석 정보 (주간/월간) */}
+        {(activeTab === REPORT_TYPES.WEEKLY ||
+          activeTab === REPORT_TYPES.MONTHLY) && (
+          <View style={styles.aiScheduleContainer}>
+            {isSubscribed ? (
+              // 구독자용 메시지
+              <View style={styles.subscriberInfoContainer}>
+                <Ionicons
+                  name="time-outline"
+                  size={18}
+                  color="#50cebb"
+                  style={{ marginRight: 8 }}
+                />
+                <Text style={styles.aiScheduleText}>
+                  {activeTab === REPORT_TYPES.WEEKLY
+                    ? "상세 분석 리포트는 매주 일요일 밤 9시에 자동 생성됩니다."
+                    : "상세 분석 리포트는 매월 마지막 날 밤 9시에 자동 생성됩니다."}
+                </Text>
+              </View>
+            ) : (
+              // 비구독자용 메시지와 버튼
+              <View style={styles.premiumFeatureContainer}>
+                <Text style={styles.premiumFeatureText}>
+                  {activeTab === REPORT_TYPES.WEEKLY
+                    ? "주간 상세 분석으로 더 정확한 인사이트를 받아보세요."
+                    : "월간 상세 분석으로 장기적인 패턴을 파악해보세요."}
+                </Text>
+
+                <TouchableOpacity
+                  style={styles.upgradeButtonNew}
+                  onPress={handleUpgrade}
+                >
+                  <Text style={styles.upgradeButtonText}>
+                    프리미엄으로 업그레이드
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* 하단 여백 */}
         <View style={styles.bottomSpacer} />
       </View>
     );
-  }, [
-    isLoading,
-    currentReport,
-    activeTab,
-    selectedDate,
-    studySessions,
-
-    handleGenerateFeedback,
-    isPremiumUser,
-    handleUpgrade,
-    formatLastUpdateTime,
-    lastUpdateTime,
-    renderWeeklyExtraContent,
-    renderMonthlyExtraContent,
-    GoalSection,
-
-    THEME_COLORS,
-    styles,
-    getColor,
-    ko,
-  ]);
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -1072,75 +1517,88 @@ const AIFeedbackScreen = () => {
         notificationCount={0}
       />
 
-      {/* 수정된 탭 컨테이너 */}
+      {/* 업그레이드 버튼이 있는 탭 컨테이너 */}
       <View style={styles.tabContainerWithUpgrade}>
         <View style={styles.tabsSection}>
           <TouchableOpacity
-            style={[styles.tab, activeTab === "daily" && styles.activeTab]}
-            onPress={() => handleTabChange("daily")}
+            style={[
+              styles.tab,
+              activeTab === REPORT_TYPES.DAILY && styles.activeTab,
+            ]}
+            onPress={() => handleTabChange(REPORT_TYPES.DAILY)}
           >
             <Text
               style={[
                 styles.tabText,
-                activeTab === "daily" && styles.activeTabText,
+                activeTab === REPORT_TYPES.DAILY && styles.activeTabText,
               ]}
             >
               일간
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.tab, activeTab === "weekly" && styles.activeTab]}
-            onPress={() => handleTabChange("weekly")}
+            style={[
+              styles.tab,
+              activeTab === REPORT_TYPES.WEEKLY && styles.activeTab,
+              !isSubscribed && additionalStyles.lockedTab,
+            ]}
+            onPress={() => handleTabChange(REPORT_TYPES.WEEKLY)}
           >
             <View style={styles.tabLabelContainer}>
               <Text
                 style={[
                   styles.tabText,
-                  activeTab === "weekly" && styles.activeTabText,
+                  activeTab === REPORT_TYPES.WEEKLY && styles.activeTabText,
                 ]}
               >
                 주간
               </Text>
-              {!isPremiumUser && (
-                <Ionicons name="star" size={12} color="#FFB74D" />
+              {!isSubscribed && (
+                <Ionicons name="lock-closed" size={12} color="#FFB74D" />
               )}
             </View>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.tab, activeTab === "monthly" && styles.activeTab]}
-            onPress={() => handleTabChange("monthly")}
+            style={[
+              styles.tab,
+              activeTab === REPORT_TYPES.MONTHLY && styles.activeTab,
+              !isSubscribed && additionalStyles.lockedTab,
+            ]}
+            onPress={() => handleTabChange(REPORT_TYPES.MONTHLY)}
           >
             <View style={styles.tabLabelContainer}>
               <Text
                 style={[
                   styles.tabText,
-                  activeTab === "monthly" && styles.activeTabText,
+                  activeTab === REPORT_TYPES.MONTHLY && styles.activeTabText,
                 ]}
               >
                 월간
               </Text>
-              {!isPremiumUser && (
-                <Ionicons name="star" size={12} color="#FFB74D" />
+              {!isSubscribed && (
+                <Ionicons name="lock-closed" size={12} color="#FFB74D" />
               )}
             </View>
           </TouchableOpacity>
         </View>
 
-        {/* 업그레이드 버튼을 오른쪽으로 정렬 */}
-        <TouchableOpacity
-          style={styles.upgradeProBadge}
-          onPress={handleUpgrade}
-        >
-          <Ionicons name="star" size={12} color="#fff" />
-          <Text style={styles.upgradeProText}>업그레이드</Text>
-        </TouchableOpacity>
+        {/* 비구독자만 업그레이드 버튼 표시 */}
+        {!isSubscribed && (
+          <TouchableOpacity
+            style={styles.upgradeProBadge}
+            onPress={handleUpgrade}
+          >
+            <Ionicons name="star" size={12} color="#fff" />
+            <Text style={styles.upgradeProText}>구독하기</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <ScrollView
         style={styles.content}
         contentContainerStyle={styles.contentContainer}
       >
-        {renderReport}
+        {renderReport()}
       </ScrollView>
     </SafeAreaView>
   );

@@ -25,7 +25,7 @@ const SubscriptionScreen = ({ navigation }) => {
     {
       id: "monthly",
       title: "월간 구독",
-      price: "9,900원/월",
+      price: "4,900원/월",
       features: [
         "무제한 일정 생성",
         "AI 학습 피드백",
@@ -38,7 +38,7 @@ const SubscriptionScreen = ({ navigation }) => {
     {
       id: "yearly",
       title: "연간 구독",
-      price: "99,000원/년",
+      price: "49,000원/년",
       features: [
         "무제한 일정 생성",
         "AI 학습 피드백",

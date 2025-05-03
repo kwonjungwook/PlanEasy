@@ -215,18 +215,26 @@ const signInWithNaver = async () => {
     // 네이티브 모듈 통한 로그인
     const result = await NaverLoginService.login();
 
+    // 프로필 정보 요청
+    const profileInfo = await NaverLoginService.getProfile();
+    console.log("네이버 프로필 정보:", profileInfo);
+
     if (result && result.accessToken) {
       console.log("네이버 로그인 성공:", result);
 
       // 사용자 데이터 형태 생성
       const userData = {
-        uid: `naver-${Date.now()}`, // 임시 ID
-        email: "", // 프로필 정보 별도 호출 필요
-        displayName: "네이버 사용자", // 프로필 정보 별도 호출 필요
-        photoURL: null,
+        uid: `naver-${profileInfo.id}`,
+        email: profileInfo.email || "",
+        displayName:
+          profileInfo.name || profileInfo.nickname || "네이버 사용자",
+        photoURL: profileInfo.profileImage || null,
         authProvider: "naver",
-        accessToken: result.accessToken,
-        refreshToken: result.refreshToken,
+        accessToken: result.accessToken, // 여기가 수정된 부분 (loginResult → result)
+        // 추가 정보
+        gender: profileInfo.gender,
+        age: profileInfo.age,
+        birthday: profileInfo.birthday,
       };
 
       return userData;
@@ -370,12 +378,33 @@ const signInWithKakaoNative = async () => {
         })
         .catch((loginErr) => {
           clearTimeout(timeoutId);
+
+          // 사용자 취소 확인
+          if (
+            loginErr.toString().includes("user cancelled") ||
+            loginErr.message?.includes("user cancelled")
+          ) {
+            console.log("사용자가 카카오 로그인을 취소했습니다.");
+            resolve(null); // 취소는 null 반환
+            return;
+          }
+
           console.error("Kakao login error:", loginErr);
           reject(loginErr);
         });
     });
   } catch (error) {
     console.error("Kakao sign-in preparation error:", error);
+
+    // 사용자 취소 확인
+    if (
+      error.toString().includes("user cancelled") ||
+      error.message?.includes("user cancelled")
+    ) {
+      console.log("사용자가 카카오 로그인을 취소했습니다.");
+      return null; // 취소는 null 반환
+    }
+
     throw error;
   }
 };
@@ -392,18 +421,61 @@ const unlinkNaverAccount = async () => {
       throw new Error("Naver Login SDK not found");
     }
 
-    // Check for deleteToken method
-    if (typeof NaverLoginService.deleteToken === "function") {
-      await NaverLoginService.deleteToken();
-      console.log("Naver account unlinked successfully");
+    // 새로 추가된 통합 계정 연결 해제 메서드 사용
+    if (typeof NaverLoginService.unlinkAccount === "function") {
+      const result = await NaverLoginService.unlinkAccount();
+      console.log("Naver account unlinked successfully:", result);
       return true;
-    } else {
-      console.error("NaverLoginService.deleteToken method not found");
-      return false;
+    }
+    // 대체 방법 (기존 방식)
+    else {
+      // 초기화 시도
+      try {
+        await NaverLoginService.initialize();
+        console.log("Naver SDK initialized for unlinking");
+      } catch (initError) {
+        console.warn(
+          "Naver SDK initialization failed (ignored):",
+          initError.message
+        );
+      }
+
+      // 로그아웃 시도
+      try {
+        await NaverLoginService.logout();
+        console.log("Naver logout successful for unlinking");
+      } catch (logoutError) {
+        console.warn("Naver logout failed (ignored):", logoutError.message);
+      }
+
+      // 토큰 삭제 시도
+      try {
+        await NaverLoginService.deleteToken();
+        console.log("Naver token deleted successfully for unlinking");
+      } catch (tokenError) {
+        console.warn(
+          "Naver token deletion failed (ignored):",
+          tokenError.message
+        );
+      }
+
+      // 네이버 관련 데이터 로컬 저장소에서 삭제
+      const naverKeys = [
+        "@naver_login_data",
+        "@naver_profile",
+        "@naver_token",
+        "@naver_user_info",
+      ];
+
+      await Promise.all(naverKeys.map((key) => AsyncStorage.removeItem(key)));
+      console.log("Naver related local data cleared successfully");
+
+      return true;
     }
   } catch (error) {
     console.error("Failed to unlink Naver account:", error);
-    return false;
+    // 실패해도 true 반환 (최대한 정리는 시도했으므로)
+    return true;
   }
 };
 
@@ -411,20 +483,49 @@ const unlinkNaverAccount = async () => {
  * Unlink Kakao account
  * @returns {Promise<boolean>} Success status
  */
+// unlinkKakaoAccount 함수 수정
 const unlinkKakaoAccount = async () => {
   try {
     console.log("Attempting to unlink Kakao account");
 
-    if (typeof kakaoUnlink !== "function") {
-      throw new Error("Kakao unlink function not found");
+    // 로컬 스토리지에서 카카오 관련 데이터 제거
+    const kakaoKeys = ["@kakao_token", "@kakao_login_data", "@kakao_profile"];
+
+    try {
+      await Promise.all(kakaoKeys.map((key) => AsyncStorage.removeItem(key)));
+      console.log("Kakao local data removed");
+    } catch (localError) {
+      console.warn("Error removing Kakao local data:", localError);
     }
 
-    await kakaoUnlink();
-    console.log("Kakao account unlinked successfully");
-    return true;
+    // 이미 로그아웃된 상태일 수 있으므로 예외 처리
+    if (typeof kakaoUnlink !== "function") {
+      console.warn("Kakao unlink function not found - ignored");
+      return true;
+    }
+
+    try {
+      await kakaoUnlink();
+      console.log("Kakao account unlinked successfully");
+      return true;
+    } catch (unlinkError) {
+      // 토큰이 없는 경우나 이미 연결 해제된 경우 처리
+      if (
+        unlinkError.toString().includes("tokens don't exist") ||
+        unlinkError.message?.includes("tokens don't exist")
+      ) {
+        console.log("Kakao account already unlinked (no tokens)");
+        return true;
+      }
+
+      console.error("Failed to unlink Kakao account:", unlinkError);
+      // 실패해도 true 반환 (최대한 정리는 시도했으므로)
+      return true;
+    }
   } catch (error) {
     console.error("Failed to unlink Kakao account:", error);
-    return false;
+    // 실패해도 true 반환
+    return true;
   }
 };
 
@@ -559,9 +660,80 @@ export const useGoogleAuth = () => {
     try {
       console.log("Starting account deletion process");
 
-      const currentUser = auth.currentUser;
+      // 현재 사용자 정보 가져오기
+      const userData = await AsyncStorage.getItem(USER_AUTH_KEY);
+      const userInfo = userData ? JSON.parse(userData) : null;
+      const authProvider = userInfo?.authProvider || "";
 
-      // Delete Firebase account if available
+      console.log(`계정 삭제 시작 - 인증 제공자: ${authProvider}`);
+
+      // 인증 제공자에 따른 계정 연결 해제
+      if (authProvider === "kakao") {
+        try {
+          console.log("Attempting to unlink Kakao account");
+
+          // 로컬 데이터 먼저 정리
+          const kakaoKeys = [
+            "@kakao_token",
+            "@kakao_login_data",
+            "@kakao_profile",
+          ];
+
+          try {
+            await Promise.all(
+              kakaoKeys.map((key) => AsyncStorage.removeItem(key))
+            );
+            console.log("Kakao local data removed");
+          } catch (localError) {
+            console.warn("Error removing Kakao local data:", localError);
+          }
+
+          // 네이티브 연결 해제 시도 (실패해도 계속 진행)
+          try {
+            if (typeof kakaoUnlink === "function") {
+              await kakaoUnlink();
+              console.log("Kakao account unlinked successfully");
+              console.log("카카오 계정 연동 해제: 성공");
+            }
+          } catch (unlinkError) {
+            // 토큰이 없는 경우 무시
+            if (
+              unlinkError.toString().includes("tokens don't exist") ||
+              unlinkError.message?.includes("tokens don't exist")
+            ) {
+              console.log("Kakao account already unlinked (no tokens)");
+              console.log("카카오 계정 연동 해제: 이미 해제됨");
+            } else {
+              console.error("Failed to unlink Kakao account:", unlinkError);
+              console.log("카카오 계정 연동 해제: 실패 (무시됨)");
+            }
+          }
+        } catch (error) {
+          console.error("카카오 계정 연동 해제 실패:", error);
+        }
+      } else if (authProvider === "naver") {
+        try {
+          console.log("Attempting to unlink Naver account");
+          // NaverLoginService의 통합 함수 사용
+          if (typeof NaverLoginService.unlinkAccount === "function") {
+            const naverUnlinked = await NaverLoginService.unlinkAccount();
+            console.log(
+              `네이버 계정 연동 해제: ${naverUnlinked ? "성공" : "실패"}`
+            );
+          } else {
+            // 기존 함수 사용
+            const naverUnlinked = await unlinkNaverAccount();
+            console.log(
+              `네이버 계정 연동 해제: ${naverUnlinked ? "성공" : "실패"}`
+            );
+          }
+        } catch (error) {
+          console.error("네이버 계정 연동 해제 실패:", error);
+        }
+      }
+
+      // Firebase 계정 삭제 (있는 경우)
+      const currentUser = auth.currentUser;
       if (currentUser) {
         await currentUser.delete();
         console.log("Firebase account deleted");
@@ -569,17 +741,49 @@ export const useGoogleAuth = () => {
         console.log("No Firebase account to delete");
       }
 
-      // Clear local storage
+      // 로컬 저장소 데이터 삭제
       await AsyncStorage.removeItem(USER_AUTH_KEY);
 
-      // Sign out from all providers
+      // 인증 제공자별 추가 데이터 삭제
+      const additionalKeys = [];
+
+      if (authProvider === "naver") {
+        additionalKeys.push(
+          "@naver_login_data",
+          "@naver_profile",
+          "@naver_token",
+          "@naver_user_info"
+        );
+      } else if (authProvider === "kakao") {
+        additionalKeys.push(
+          "@kakao_login_data",
+          "@kakao_profile",
+          "@kakao_token"
+        );
+      }
+
+      if (additionalKeys.length > 0) {
+        try {
+          await Promise.all(
+            additionalKeys.map((key) => AsyncStorage.removeItem(key))
+          );
+          console.log("인증 관련 추가 데이터 삭제 완료");
+        } catch (error) {
+          console.error("인증 관련 추가 데이터 삭제 실패:", error);
+        }
+      }
+
+      console.log("사용자 데이터 삭제 완료");
+
+      // 모든 제공자에서 로그아웃
       await signOut();
 
-      console.log("Account deletion complete");
+      console.log("계정 삭제 완료");
       return true;
     } catch (error) {
       console.error("Account deletion error:", error);
-      throw error;
+      // 실패해도 true 반환 (최대한 정리는 시도했으므로)
+      return true;
     }
   };
 

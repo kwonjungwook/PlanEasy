@@ -42,6 +42,7 @@ import {
   checkIfHoliday,
   generateDailyChallenge,
 } from "../components/dailybadge";
+import { useSubscription } from "../context/SubscriptionContext";
 
 // Toast icons object
 const TOAST_ICONS = {
@@ -83,6 +84,9 @@ export default function DailyScreen({ navigation }) {
     recentUnlocks,
     clearRecentUnlocks,
     addPoints,
+    nextSlotPrice, // 이 속성을 추가
+    purchaseDDaySlot, // 이 함수도 필요
+    handleGoalAdded,
   } = useProgress();
 
   const {
@@ -126,6 +130,8 @@ export default function DailyScreen({ navigation }) {
 
   // Notification state
   const [notificationEnabled, setNotificationEnabled] = useState(false);
+
+  const { isSubscribed } = useSubscription();
 
   // Toast management
   const [inlineToasts, setInlineToasts] = useState([]);
@@ -370,7 +376,9 @@ export default function DailyScreen({ navigation }) {
   const handleTaskCompletion = async (task) => {
     try {
       const todayStr = new Date().toISOString().split("T")[0];
-      const taskKey = `${task.id}_${todayStr}`;
+
+      // 일정 ID 대신 일정 내용을 기준으로 완료 여부 키 생성
+      const taskKey = `${task.task}_${task.startTime}_${task.endTime}_${todayStr}`;
 
       if (taskCompletionRecord[taskKey]) {
         playCompleteSound();
@@ -526,7 +534,7 @@ export default function DailyScreen({ navigation }) {
     return `D+${Math.abs(diff)}`;
   };
 
-  const handleSaveGoal = () => {
+  const handleSaveGoal = async () => {
     if (!goalTitle.trim()) {
       Alert.alert("알림", "목표 제목을 입력해주세요.");
       return;
@@ -541,8 +549,14 @@ export default function DailyScreen({ navigation }) {
       updateGoalTarget(editingGoalId, goalData);
     } else {
       addGoalTarget(goalData);
+
+      // 구독자가 아니고 사용 가능한 슬롯이 있는 경우에만 슬롯 감소
+      if (!isSubscribed && unusedDDaySlots > 0) {
+        await handleGoalAdded();
+      }
     }
 
+    // 입력 초기화 및 모달 닫기
     setGoalTitle("");
     setGoalDate(new Date());
     setEditingGoalId(null);
@@ -869,49 +883,78 @@ export default function DailyScreen({ navigation }) {
             <Text style={styles.goalHeader}>🎯 D-Day</Text>
             <View style={styles.slotCountContainer}>
               <Text style={styles.slotCountText}>
-                {goalTargets.length}/{ddaySlots}
+                {isSubscribed ? "무제한" : `${goalTargets.length}/${ddaySlots}`}
               </Text>
             </View>
 
-            {unusedDDaySlots > 0 && (
+            {!isSubscribed && unusedDDaySlots > 0 && (
               <View style={styles.unusedSlotIndicator}>
                 <Text style={styles.unusedSlotText}>+{unusedDDaySlots}</Text>
+              </View>
+            )}
+
+            {isSubscribed && (
+              <View style={styles.subscribedBadge}>
+                <Text style={styles.subscribedText}>PRO</Text>
               </View>
             )}
           </TouchableOpacity>
 
           <View style={styles.goalHeaderRight}>
             <TouchableOpacity
-              style={[
-                styles.addGoalButtonCute,
-                goalTargets.length >= ddaySlots &&
-                  unusedDDaySlots <= 0 &&
-                  styles.addGoalButtonDisabled,
-              ]}
+              style={[styles.addGoalButtonCute]}
               onPress={() => {
-                if (goalTargets.length < ddaySlots || unusedDDaySlots > 0) {
+                // 구독자인 경우 항상 추가 가능하게 변경
+                if (
+                  isSubscribed ||
+                  goalTargets.length < ddaySlots ||
+                  unusedDDaySlots > 0
+                ) {
                   setGoalTitle("");
                   setGoalDate(new Date());
                   setEditingGoalId(null);
                   setShowGoalModal(true);
                 } else {
-                  showInlineToast(
-                    "D-Day 슬롯이 부족합니다. 포인트 메뉴에서 구매하세요.",
-                    "warning"
+                  // 비구독자이고 슬롯이 부족한 경우 구매 안내
+                  Alert.alert(
+                    "D-Day 슬롯 부족",
+                    `추가 D-Day를 설정하려면 슬롯이 필요합니다.\n\n방법 1: ${nextSlotPrice} 포인트로 구매\n방법 2: 구독으로 무제한 사용`,
+                    [
+                      {
+                        text: "구독하기",
+                        onPress: () => navigation.navigate("Subscription"),
+                      },
+                      {
+                        text: "포인트로 구매",
+                        onPress: async () => {
+                          if (points >= nextSlotPrice) {
+                            const success = await purchaseDDaySlot();
+                            if (success) {
+                              showInlineToast(
+                                "D-Day 슬롯을 구매했습니다. 이제 새 D-Day를 추가할 수 있습니다.",
+                                "success"
+                              );
+                            }
+                          } else {
+                            showInlineToast(
+                              `포인트가 부족합니다. (필요: ${nextSlotPrice}P)`,
+                              "warning"
+                            );
+                          }
+                        },
+                      },
+                      { text: "취소", style: "cancel" },
+                    ]
                   );
                 }
               }}
-              disabled={goalTargets.length >= ddaySlots && unusedDDaySlots <= 0}
             >
-              <Text
-                style={[
-                  styles.addGoalButtonTextCute,
-                  goalTargets.length >= ddaySlots &&
-                    unusedDDaySlots <= 0 &&
-                    styles.addGoalButtonTextDisabled,
-                ]}
-              >
-                + 추가
+              <Text style={styles.addGoalButtonTextCute}>
+                {!isSubscribed &&
+                goalTargets.length >= ddaySlots &&
+                unusedDDaySlots <= 0
+                  ? "구매 필요"
+                  : "+ 추가"}
               </Text>
             </TouchableOpacity>
 

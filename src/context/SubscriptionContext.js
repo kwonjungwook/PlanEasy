@@ -3,185 +3,162 @@ import React, { createContext, useState, useEffect, useContext } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "./AuthContext";
 
-// Subscription storage key
+// 구독 관련 상수
 const SUBSCRIPTION_KEY = "@user_subscription";
 
-// Create context
+// SubscriptionContext 생성
 const SubscriptionContext = createContext(null);
 
-// Provider component
 export const SubscriptionProvider = ({ children }) => {
-  const { userData } = useAuth();
+  const { user } = useAuth();
   const [isSubscribed, setIsSubscribed] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [subscriptionData, setSubscriptionData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // Load subscription status on mount and when user changes
+  // 초기 구독 상태 로드
   useEffect(() => {
-    const loadSubscriptionStatus = async () => {
+    const loadSubscriptionData = async () => {
       try {
         setLoading(true);
-        console.log("Loading subscription status...");
 
-        // Only try to load subscription if user is logged in
-        if (userData?.uid) {
-          console.log("User logged in, fetching subscription data");
-          const storedData = await AsyncStorage.getItem(SUBSCRIPTION_KEY);
+        // 사용자가 로그인되어 있지 않으면 구독 취소
+        if (!user) {
+          setIsSubscribed(false);
+          setSubscriptionData(null);
+          return;
+        }
 
-          if (storedData) {
-            const parsedData = JSON.parse(storedData);
+        // AsyncStorage에서 구독 정보 가져오기
+        const storedData = await AsyncStorage.getItem(SUBSCRIPTION_KEY);
 
-            // Check if subscription data belongs to current user
-            if (parsedData.userId === userData.uid) {
-              console.log("Found subscription data for current user");
-              setIsSubscribed(parsedData.isSubscribed || false);
-              setSubscriptionData(parsedData);
-            } else {
-              // If different user, reset subscription
-              console.log("Different user, resetting subscription");
-              setIsSubscribed(false);
-              setSubscriptionData(null);
-            }
+        if (storedData) {
+          const parsedData = JSON.parse(storedData);
+
+          // 구독 만료 확인
+          const isExpired =
+            parsedData.expiryDate &&
+            new Date(parsedData.expiryDate) < new Date();
+
+          if (!isExpired) {
+            setIsSubscribed(true);
+            setSubscriptionData(parsedData);
           } else {
-            // No stored data, default to non-subscribed
-            console.log("No stored subscription data");
+            // 만료된 구독 정보 제거
+            await AsyncStorage.removeItem(SUBSCRIPTION_KEY);
             setIsSubscribed(false);
             setSubscriptionData(null);
           }
         } else {
-          // Not logged in, reset subscription
-          console.log("User not logged in, clearing subscription");
           setIsSubscribed(false);
           setSubscriptionData(null);
         }
-      } catch (error) {
-        console.error("Failed to load subscription status:", error);
-        setIsSubscribed(false);
-        setSubscriptionData(null);
+      } catch (err) {
+        console.error("구독 정보 로드 오류:", err);
+        setError(err.message);
       } finally {
         setLoading(false);
       }
     };
 
-    loadSubscriptionStatus();
-  }, [userData]);
+    loadSubscriptionData();
+  }, [user]);
 
-  // Save subscription to storage
-  const saveSubscriptionData = async (data) => {
+  // 구독 시작 함수
+  const subscribe = async (planType, paymentMethod) => {
     try {
-      await AsyncStorage.setItem(SUBSCRIPTION_KEY, JSON.stringify(data));
-      return true;
-    } catch (error) {
-      console.error("Failed to save subscription data:", error);
-      return false;
-    }
-  };
+      if (!user) return false;
 
-  // Subscribe user
-  const subscribe = async (planType = "monthly", paymentMethod = "unknown") => {
-    if (!userData) {
-      console.warn("Cannot subscribe: No user logged in");
-      return false;
-    }
+      // 현재 날짜
+      const startDate = new Date();
 
-    try {
-      console.log(`Subscribing user to ${planType} plan`);
-      const newSubscriptionData = {
-        userId: userData.uid,
-        isSubscribed: true,
+      // 만료일 계산 (월간: 1개월, 연간: 1년)
+      const expiryDate = new Date();
+      if (planType === "monthly") {
+        expiryDate.setMonth(expiryDate.getMonth() + 1);
+      } else {
+        expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+      }
+
+      // 구독 데이터 생성
+      const newSubscription = {
+        userId: user.uid,
         planType,
-        startDate: new Date().toISOString(),
+        startDate: startDate.toISOString(),
+        expiryDate: expiryDate.toISOString(),
         paymentMethod,
-        // Mock expiry date - one month from now for monthly, one year for yearly
-        expiryDate: new Date(
-          Date.now() + (planType === "yearly" ? 365 : 30) * 24 * 60 * 60 * 1000
-        ).toISOString(),
+        status: "active",
       };
 
-      const success = await saveSubscriptionData(newSubscriptionData);
+      // AsyncStorage에 저장
+      await AsyncStorage.setItem(
+        SUBSCRIPTION_KEY,
+        JSON.stringify(newSubscription)
+      );
 
-      if (success) {
-        setIsSubscribed(true);
-        setSubscriptionData(newSubscriptionData);
-        return true;
-      }
+      // 상태 업데이트
+      setIsSubscribed(true);
+      setSubscriptionData(newSubscription);
 
-      return false;
-    } catch (error) {
-      console.error("Failed to subscribe user:", error);
-      return false;
-    }
-  };
-
-  // Unsubscribe user
-  const unsubscribe = async () => {
-    if (!userData) {
-      console.warn("Cannot unsubscribe: No user logged in");
-      return false;
-    }
-
-    try {
-      console.log("Unsubscribing user");
-      const updatedData = {
-        userId: userData.uid,
-        isSubscribed: false,
-        cancelDate: new Date().toISOString(),
-        // Keep other properties from the previous subscription
-        ...(subscriptionData || {}),
-      };
-
-      const success = await saveSubscriptionData(updatedData);
-
-      if (success) {
-        setIsSubscribed(false);
-        setSubscriptionData(updatedData);
-        return true;
-      }
-
-      return false;
-    } catch (error) {
-      console.error("Failed to unsubscribe user:", error);
-      return false;
-    }
-  };
-
-  // Clear subscription data (used when logging out)
-  const clearSubscriptionData = async () => {
-    try {
-      console.log("Clearing subscription data");
-      await AsyncStorage.removeItem(SUBSCRIPTION_KEY);
-      setIsSubscribed(false);
-      setSubscriptionData(null);
       return true;
-    } catch (error) {
-      console.error("Failed to clear subscription data:", error);
+    } catch (err) {
+      console.error("구독 시작 오류:", err);
+      setError(err.message);
       return false;
     }
   };
 
-  // Context value
-  const value = {
+  // 구독 취소 함수
+  const unsubscribe = async () => {
+    try {
+      if (!subscriptionData) return false;
+
+      // 구독 상태 업데이트 (사용자는 만료일까지 서비스 이용 가능)
+      const updatedSubscription = {
+        ...subscriptionData,
+        status: "cancelled",
+      };
+
+      // AsyncStorage 업데이트
+      await AsyncStorage.setItem(
+        SUBSCRIPTION_KEY,
+        JSON.stringify(updatedSubscription)
+      );
+
+      // 상태 업데이트
+      setSubscriptionData(updatedSubscription);
+
+      return true;
+    } catch (err) {
+      console.error("구독 취소 오류:", err);
+      setError(err.message);
+      return false;
+    }
+  };
+
+  // 컨텍스트 값 정의
+  const contextValue = {
     isSubscribed,
     subscriptionData,
     loading,
+    error,
     subscribe,
     unsubscribe,
-    clearSubscriptionData,
   };
 
   return (
-    <SubscriptionContext.Provider value={value}>
+    <SubscriptionContext.Provider value={contextValue}>
       {children}
     </SubscriptionContext.Provider>
   );
 };
 
-// Custom hook to use subscription context
+// useSubscription 훅
 export const useSubscription = () => {
   const context = useContext(SubscriptionContext);
   if (!context) {
     throw new Error(
-      "useSubscription must be used within a SubscriptionProvider"
+      "useSubscription은 SubscriptionProvider 내부에서만 사용할 수 있습니다"
     );
   }
   return context;
