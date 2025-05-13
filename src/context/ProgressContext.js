@@ -2,7 +2,7 @@
 import React, { createContext, useState, useContext, useEffect } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ToastEventSystem } from "../components/common/AutoToast";
-import { addDDaySlotPurchase } from "../utils/pointHistoryManager";
+import { savePointHistory } from "../utils/pointHistoryManager";
 
 // dailybadge.js에서 가져온 상수 및 함수
 import {
@@ -240,7 +240,6 @@ export const ProgressProvider = ({ children }) => {
     loadData();
   }, []);
 
-  // checkAttendance 함수 개선 - 안정성 및 오류 처리 강화
   const checkAttendance = async () => {
     try {
       // 로컬 시간 기준으로 오늘 날짜 계산
@@ -253,11 +252,12 @@ export const ProgressProvider = ({ children }) => {
       }
 
       // 출석 기록 유효성 검증
-      const validAttendanceData = typeof attendanceData === 'object' ? attendanceData : {};
-      
+      const validAttendanceData =
+        typeof attendanceData === "object" ? attendanceData : {};
+
       // 출석 기록 업데이트
       const newAttendanceData = { ...validAttendanceData, [today]: true };
-      
+
       try {
         // 데이터 저장 먼저 수행 (상태 업데이트 전)
         await AsyncStorage.setItem(
@@ -269,7 +269,10 @@ export const ProgressProvider = ({ children }) => {
         setAttendanceData(newAttendanceData);
       } catch (storageError) {
         console.error("출석 데이터 저장 오류:", storageError);
-        ToastEventSystem.showToast("출석 기록 저장 중 오류가 발생했습니다", 2000);
+        ToastEventSystem.showToast(
+          "출석 기록 저장 중 오류가 발생했습니다",
+          2000
+        );
         return false;
       }
 
@@ -277,7 +280,7 @@ export const ProgressProvider = ({ children }) => {
       let newStreak = 0;
       try {
         newStreak = calculateStreak(newAttendanceData);
-        
+
         // 스트릭 값 저장
         await AsyncStorage.setItem(STREAK_STORAGE_KEY, newStreak.toString());
         setStreak(newStreak);
@@ -298,7 +301,10 @@ export const ProgressProvider = ({ children }) => {
       } catch (dateError) {
         console.error("날짜 데이터 저장 오류:", dateError);
         // 중요 단계이므로 오류 시 사용자에게 알림
-        ToastEventSystem.showToast("출석 정보 저장 중 오류가 발생했습니다", 2000);
+        ToastEventSystem.showToast(
+          "출석 정보 저장 중 오류가 발생했습니다",
+          2000
+        );
       }
 
       // 보상 계산
@@ -318,7 +324,7 @@ export const ProgressProvider = ({ children }) => {
         await checkMissionProgress("attendance_check", {
           currentStreak: newStreak,
         });
-        
+
         // 연속 출석 배지 확인
         await checkStreakBadges(newStreak);
       } catch (rewardError) {
@@ -335,33 +341,36 @@ export const ProgressProvider = ({ children }) => {
     } catch (error) {
       console.error("출석 체크 오류:", error);
       // 사용자에게 일반적인 오류 메시지 표시
-      ToastEventSystem.showToast("출석 체크 중 오류가 발생했습니다. 다시 시도해주세요.", 3000);
+      ToastEventSystem.showToast(
+        "출석 체크 중 오류가 발생했습니다. 다시 시도해주세요.",
+        3000
+      );
       return false;
     }
   };
 
+  // 날짜 유틸리티 함수 - 로컬 타임존 기반 포맷팅
+  const formatDateStr = (date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
   // 연속 출석 계산 함수 개선 - 안전성 및 오류 처리 강화
   const calculateStreak = (data) => {
-    if (!data || typeof data !== 'object') {
-      console.warn('calculateStreak: 유효하지 않은 데이터 형식', data);
+    if (!data || typeof data !== "object") {
+      console.warn("calculateStreak: 유효하지 않은 데이터 형식", data);
       return 0; // 유효하지 않은 데이터일 경우 0 반환
     }
-
-    // 날짜 유틸리티 함수 - 로컬 타임존 기반 포맷팅
-    const formatDateStr = (date) => {
-      const year = date.getFullYear();
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const day = String(date.getDate()).padStart(2, '0');
-      return `${year}-${month}-${day}`;
-    };
 
     // 로컬 시간 기준으로 날짜 계산 (타임존 문제 해결)
     const now = new Date();
     const today = formatDateStr(now);
-    
+
     // 오늘 체크했으면 1부터 시작
     let currentStreak = data[today] === true ? 1 : 0;
-    
+
     if (currentStreak === 0) {
       return 0; // 오늘 출석하지 않았으면 연속 출석 없음
     }
@@ -369,15 +378,15 @@ export const ProgressProvider = ({ children }) => {
     // 안전한 날짜 계산을 위한 변수들
     const MAX_DAYS_TO_CHECK = 366; // 무한 루프 방지용 최대 검사 일수
     let daysChecked = 0;
-    
+
     // 어제부터 거슬러 올라가며 연속된 출석 체크
     const checkDate = new Date(now);
     checkDate.setDate(checkDate.getDate() - 1); // 어제부터 시작
-    
+
     while (daysChecked < MAX_DAYS_TO_CHECK) {
       // 체크할 날짜 문자열 형식으로 변환
       const checkDateStr = formatDateStr(checkDate);
-      
+
       // 해당 날짜에 출석 기록이 정확히 true인지 확인
       if (data[checkDateStr] === true) {
         currentStreak++;
@@ -385,7 +394,7 @@ export const ProgressProvider = ({ children }) => {
       } else {
         break; // 연속 출석이 끊김
       }
-      
+
       daysChecked++;
     }
 
@@ -916,8 +925,15 @@ export const ProgressProvider = ({ children }) => {
     }
   };
 
-  // 포인트 차감 함수
-  const deductPoints = async (amount, reason = "") => {
+  const deductPoints = async (
+    rawAmount,
+    reason = "", // 예: "레어 색상 구매"
+    category = "spend", // 예: "color" | "dday" | "streak"
+    meta = {}
+  ) => {
+    // ✅ 항상 양수 처리해서 호출 실수 방어
+    const amount = Math.abs(rawAmount);
+
     try {
       if (points < amount) {
         ToastEventSystem.showToast("포인트가 부족합니다", 2000);
@@ -928,15 +944,22 @@ export const ProgressProvider = ({ children }) => {
       setPoints(newPoints);
       await AsyncStorage.setItem(POINTS_STORAGE_KEY, newPoints.toString());
 
-      // 토스트 메시지로 알림
+      // 히스토리 저장 – 한 번만 기록
+      await savePointHistory({
+        type: "spend",
+        category,
+        amount: -amount, // 차감은 음수로 저장
+        description: reason,
+        meta,
+      });
+
       ToastEventSystem.showToast(
-        `${amount} 포인트를 사용했습니다 ${reason && `(${reason})`}`,
+        `${amount}P 사용했습니다${reason ? ` (${reason})` : ""}`,
         2000
       );
-
       return true;
-    } catch (error) {
-      console.error("포인트 차감 오류:", error);
+    } catch (err) {
+      console.error("포인트 차감 오류:", err);
       return false;
     }
   };
@@ -1106,38 +1129,23 @@ export const ProgressProvider = ({ children }) => {
   };
 
   // D-Day 슬롯 구매 함수
+  // 🔄 ProgressContext 내부 – D-Day 슬롯 구매 (리팩터)
   const purchaseDDaySlot = async () => {
     try {
       console.log(
         `D-Day 슬롯 구매 시도: ${points}P 보유, ${nextSlotPrice}P 필요`
       );
 
-      // 포인트가 충분한지 확인
-      if (points < nextSlotPrice) {
-        console.log("포인트 부족으로 구매 실패");
-        return false;
-      }
+      // ✅ deductPoints 한 방으로 차감 + 히스토리(category="dday") 기록
+      const ok = await deductPoints(nextSlotPrice, "D-Day 슬롯 구매", "dday");
+      if (!ok) return false; // 포인트 부족 등으로 실패 시 종료
 
-      // 포인트 차감
-      const newPoints = points - nextSlotPrice;
-      setPoints(newPoints);
+      // 사용 가능한 D-Day 슬롯 +1
+      const newUnused = unusedDDaySlots + 1;
+      setUnusedDDaySlots(newUnused);
+      await AsyncStorage.setItem("@unused_dday_slots", newUnused.toString());
 
-      // 사용 가능한 D-Day 슬롯 증가 (총 슬롯 수는 그대로, 사용 가능한 슬롯만 증가)
-      setUnusedDDaySlots((prev) => prev + 1);
-
-      // 변경된 데이터 저장
-      await Promise.all([
-        AsyncStorage.setItem("@user_points", newPoints.toString()),
-        AsyncStorage.setItem(
-          "@unused_dday_slots",
-          (unusedDDaySlots + 1).toString()
-        ),
-      ]);
-
-      // 포인트 내역에 구매 기록 추가 (새로 추가된 코드)
-      await addDDaySlotPurchase(nextSlotPrice);
-
-      // 알림 생성 (새로운 슬롯 해금)
+      // 알림 생성
       createUnlock({
         type: "feature",
         name: "D-Day 슬롯 구매 완료!",
@@ -1145,9 +1153,7 @@ export const ProgressProvider = ({ children }) => {
         icon: "🎯",
       });
 
-      console.log(
-        `D-Day 슬롯 구매 성공! 사용 가능한 슬롯: ${unusedDDaySlots + 1}`
-      );
+      console.log(`D-Day 슬롯 구매 성공! 사용 가능한 슬롯: ${newUnused}`);
       return true;
     } catch (error) {
       console.error("D-Day 슬롯 구매 오류:", error);
@@ -1329,7 +1335,7 @@ export const ProgressProvider = ({ children }) => {
         await AsyncStorage.removeItem(CHECKED_TODAY_KEY);
 
         // 오늘 날짜 갱신 - 자정이 지나면 새 날짜로 업데이트
-        const newToday = new Date().toISOString().split("T")[0];
+        const newToday = formatDateStr(new Date());
         setLastCheckDate(newToday);
 
         resetCheckStatus(); // 다음 날을 위해 재설정
@@ -1450,7 +1456,6 @@ export const ProgressProvider = ({ children }) => {
     perfectDays: perfectDays || 0,
     loading: loading || false,
     recentUnlocks: recentUnlocks || [],
-    ddaySlots,
     unusedDDaySlots,
     nextSlotPrice,
     handleGoalAdded,
@@ -1463,9 +1468,6 @@ export const ProgressProvider = ({ children }) => {
     checkMissionProgress,
     claimMissionReward,
 
-    // Calculated values with safe defaults
-    nextSlotPrice: SLOT_PRICES[ddaySlots + 1] || 2000,
-    currentLevelTitle: getCurrentLevelTitle() || "초보 계획자",
     levelProgress: getLevelProgress() || {
       current: 0,
       required: 100,

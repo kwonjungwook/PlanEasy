@@ -5,12 +5,9 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Image,
   SafeAreaView,
   Alert,
   ActivityIndicator,
-  navigate,
-  useCallback,
   Modal,
   FlatList,
 } from "react-native";
@@ -19,7 +16,7 @@ import { useProgress } from "../context/ProgressContext";
 import { ToastEventSystem } from "../components/common/AutoToast";
 import { getRecentColorPurchases } from "../utils/pointHistoryManager";
 import React, { useState, useEffect } from "react";
-import { addDDaySlotPurchase } from "../utils/pointHistoryManager";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const UNLOCKED_COLORS_STORAGE_KEY = "unlocked_schedule_colors";
 
@@ -61,14 +58,6 @@ const COLOR_PALETTE = [
   "rgba(176, 190, 197, 0.60)", // 청회색
 ];
 
-// 색상 가격 그룹 (색상 인덱스 범위에 따른 가격)
-const COLOR_PRICES = {
-  0: 0, // 첫 번째 색상: 무료 (기본 제공)
-  1: 50, // 일반 색상: 1-14번째 색상 (인덱스 1-13)
-  14: 80, // 프리미엄 색상: 15-21번째 색상 (인덱스 14-20)
-  21: 100, // 레어 색상: 22-28번째 색상 (인덱스 21-27)
-};
-
 // 색상의 가격 계산 함수
 const getColorPrice = (colorIndex) => {
   if (colorIndex === 0) return 0; // 기본 색상
@@ -90,10 +79,19 @@ const PointsScreen = ({ navigation }) => {
   const [recentColorPurchases, setRecentColorPurchases] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isColorStoreVisible, setIsColorStoreVisible] = useState(false);
-  const [selectedColorForPurchase, setSelectedColorForPurchase] =
-    useState(null);
-  const UNLOCKED_COLORS_STORAGE_KEY = "unlocked_schedule_colors";
   const [unlockedColors, setUnlockedColors] = useState({ 0: true });
+
+  const {
+    points,
+    level,
+    streak,
+    completedTasks,
+    ddaySlots,
+    unusedDDaySlots,
+    nextSlotPrice,
+    purchaseDDaySlot,
+    deductPoints,
+  } = useProgress();
 
   // AsyncStorage를 사용하여 함수 구현
   const saveUnlockedColors = async (updatedColors) => {
@@ -111,53 +109,35 @@ const PointsScreen = ({ navigation }) => {
 
   // 색상 구매 함수
   const purchaseColor = async (colorIndex) => {
-    try {
-      // 이미 해금된 색상인지 확인
-      if (unlockedColors[colorIndex]) {
-        Alert.alert("알림", "이미 해금된 색상입니다.");
-        return false;
-      }
-
-      // 색상 가격 및 희귀도 계산
-      const colorPrice = getColorPrice(colorIndex);
-      const colorRarity = getColorRarity(colorIndex);
-
-      // 포인트가 충분한지 확인
-      if (points < colorPrice) {
-        Alert.alert(
-          "포인트 부족",
-          `색상을 구매하기 위해서는 ${colorPrice}P가 필요합니다.`
-        );
-        return false;
-      }
-
-      await deductPoints(colorPrice, `${colorRarity} 색상 구매`);
-      // 포인트 차감
-      await addPoints(-colorPrice);
-
-      // 해금된 색상에 추가
-      const updatedColors = { ...unlockedColors, [colorIndex]: true };
-      const saveResult = await saveUnlockedColors(updatedColors);
-
-      if (saveResult) {
-        setUnlockedColors(updatedColors);
-      }
-
-      // 구매 내역 추가
-      try {
-        await addDDaySlotPurchase(colorPrice);
-      } catch (historyError) {
-        console.warn("색상 구매 내역 추가 실패:", historyError);
-      }
-
-      // 구매 성공 메시지
-      Alert.alert("구매 완료", `${colorRarity} 색상이 해금되었습니다!`);
-      return true;
-    } catch (error) {
-      console.error("색상 구매 오류:", error);
-      Alert.alert("오류", "색상 구매 중 문제가 발생했습니다.");
+    if (unlockedColors[colorIndex]) {
+      Alert.alert("알림", "이미 해금된 색상입니다.");
       return false;
     }
+
+    const colorPrice = getColorPrice(colorIndex);
+    const colorRarity = getColorRarity(colorIndex);
+
+    if (points < colorPrice) {
+      Alert.alert("포인트 부족", `${colorPrice}P가 필요합니다.`);
+      return false;
+    }
+
+    // ✅ 한 번의 deductPoints 로 차감 + 히스토리 처리
+    const ok = await deductPoints(
+      colorPrice,
+      `${colorRarity} 색상 구매`,
+      "color",
+      { colorIndex }
+    );
+    if (!ok) return false;
+
+    // 색상 잠금 해제
+    const updatedColors = { ...unlockedColors, [colorIndex]: true };
+    if (await saveUnlockedColors(updatedColors))
+      setUnlockedColors(updatedColors);
+
+    Alert.alert("구매 완료", `${colorRarity} 색상이 해금되었습니다!`);
+    return true;
   };
 
   const renderColorShowcaseModal = () => {
@@ -241,6 +221,7 @@ const PointsScreen = ({ navigation }) => {
       </Modal>
     );
   };
+
   // 컴포넌트 마운트 시 최근 구매 내역 로드
   useEffect(() => {
     const loadRecentPurchases = async () => {
@@ -310,19 +291,6 @@ const PointsScreen = ({ navigation }) => {
     );
   };
 
-  const {
-    points,
-    level,
-    streak,
-    completedTasks,
-    ddaySlots,
-    unusedDDaySlots,
-    nextSlotPrice,
-    purchaseDDaySlot,
-    addPoints, // 추가
-    deductPoints, // 추가
-  } = useProgress();
-
   // D-Day 슬롯 구매 처리 함수
   const handlePurchaseDDaySlot = async () => {
     try {
@@ -339,9 +307,6 @@ const PointsScreen = ({ navigation }) => {
       const success = await purchaseDDaySlot();
 
       if (success) {
-        // 구매 내역 추가
-        await addDDaySlotPurchase(nextSlotPrice);
-
         // 구매 성공 시 토스트 메시지
         ToastEventSystem.showToast(`D-Day 슬롯 구매 완료! (+1)`, 2000);
       } else {
@@ -410,7 +375,6 @@ const PointsScreen = ({ navigation }) => {
       highlight: true,
     },
   ];
-  navigate;
 
   // 포인트 사용처 목록
   const pointUses = [

@@ -54,6 +54,7 @@ const StudyTimerScreen = () => {
   const contentOpacity = useRef(new Animated.Value(1)).current;
   const timerScale = useRef(new Animated.Value(1)).current;
   const controlsScale = useRef(new Animated.Value(1)).current;
+  const timerBackgroundColor = useRef(new Animated.Value(0)).current;
 
   // 탭바 기본 스타일 정의
   const defaultTabBarStyle = {
@@ -275,44 +276,55 @@ const StudyTimerScreen = () => {
     }
   }, [timerState, isFocusMode, navigation]);
 
-  // 포커스 모드 변경에 따른 애니메이션만 처리하는 useEffect - 수정됨
+  // 포커스 모드 변경에 따른 애니메이션 - 모든 애니메이션에 동일한 설정 적용
   useEffect(() => {
-    // 애니메이션 실행
+    // 모든 애니메이션에 완전히 동일한 설정 사용
     const animationConfig = {
-      timing: {
-        duration: 3000,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      },
+      duration: 2000, // 일관된 지속 시간
+      easing: Easing.inOut(Easing.cubic),
+      useNativeDriver: false, // 모든 애니메이션에 false 사용
     };
 
-    // 애니메이션 조합하여 실행
+    // 모든 애니메이션을 하나의 parallel로 실행
     Animated.parallel([
-      // 다크 오버레이
+      // 전체 화면 다크 오버레이
       Animated.timing(darkOverlayOpacity, {
         toValue: isFocusMode ? 1 : 0,
-        ...animationConfig.timing,
+        ...animationConfig,
       }),
 
-      // contentOpacity는 타이머에 영향을 주지 않도록 제거하고 필요한 부분에만 적용
+      // 타이머 써클 배경색 애니메이션
+      Animated.timing(timerBackgroundColor, {
+        toValue: isFocusMode ? 1 : 0,
+        ...animationConfig,
+      }),
+
+      // contentOpacity
       Animated.timing(contentOpacity, {
         toValue: isFocusMode ? 0 : 1,
-        ...animationConfig.timing,
+        ...animationConfig,
       }),
 
       // 타이머 크기
       Animated.timing(timerScale, {
         toValue: isFocusMode ? 1.3 : 1,
-        ...animationConfig.timing,
+        ...animationConfig,
       }),
 
       // 컨트롤 버튼 크기
       Animated.timing(controlsScale, {
         toValue: isFocusMode ? 1.15 : 1,
-        ...animationConfig.timing,
+        ...animationConfig,
       }),
     ]).start();
-  }, [isFocusMode]);
+  }, [
+    isFocusMode,
+    darkOverlayOpacity,
+    contentOpacity,
+    timerScale,
+    controlsScale,
+    timerBackgroundColor,
+  ]);
 
   // 화면 방향 감지를 위한 useEffect
   useEffect(() => {
@@ -523,7 +535,10 @@ const StudyTimerScreen = () => {
             {
               borderColor: selectedMethod.color,
               transform: [{ scale: timerScale }],
-              backgroundColor: isFocusMode ? "#000" : "transparent",
+              backgroundColor: timerBackgroundColor.interpolate({
+                inputRange: [0, 1],
+                outputRange: ["transparent", "#000"],
+              }),
               zIndex: 10, // 높은 zIndex로 설정
             },
           ]}

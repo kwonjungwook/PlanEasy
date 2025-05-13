@@ -349,7 +349,7 @@ export default function DailyScreen({ navigation }) {
     setTimeout(() => saveSectionStates(), 100);
   };
 
-  // Task completion functions
+  // 데이터 저장 함수도 업데이트
   const saveTaskCompletionData = async () => {
     try {
       const data = {
@@ -358,8 +358,10 @@ export default function DailyScreen({ navigation }) {
         morningTasksCompleted,
         eveningTasksCompleted,
         taskCompletionRecord,
+        completedTasks, // 체크박스 상태도 저장
       };
       await AsyncStorage.setItem("@task_completion_data", JSON.stringify(data));
+      console.log("태스크 완료 데이터 저장 완료");
     } catch (error) {
       console.log("태스크 완료 데이터 저장 오류:", error);
     }
@@ -376,22 +378,30 @@ export default function DailyScreen({ navigation }) {
   const handleTaskCompletion = async (task) => {
     try {
       const todayStr = new Date().toISOString().split("T")[0];
-
-      // 일정 ID 대신 일정 내용을 기준으로 완료 여부 키 생성
       const taskKey = `${task.task}_${task.startTime}_${task.endTime}_${todayStr}`;
 
+      // 이미 완료된 일정인지 확인
       if (taskCompletionRecord[taskKey]) {
-        playCompleteSound();
-        showInlineToast(`"${task.task}" 완료!`, "success");
-        return;
+        console.log("이미 완료된 일정:", taskKey);
+        return false;
       }
 
       playCompleteSound();
+
+      // 포인트 계산
+      const basePoints = 5;
+      const hour = parseInt(task.startTime.split(":")[0]);
+      let bonusPoints = 0;
+
+      if (hour < 7) bonusPoints += 3; // 이른 아침 보너스
+      if (hour >= 22) bonusPoints += 2; // 늦은 밤 보너스
+
+      const totalPoints = basePoints + bonusPoints;
+
+      // 상태 업데이트
       const newTotalCompletedTasks = totalCompletedTasks + 1;
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      const hour = parseInt(task.startTime.split(":")[0]);
-      const randomPoints = Math.floor(Math.random() * 5) + 1;
 
       setTotalCompletedTasks(newTotalCompletedTasks);
       setLastCompletionDate(today.toISOString());
@@ -402,37 +412,81 @@ export default function DailyScreen({ navigation }) {
         setEveningTasksCompleted(eveningTasksCompleted + 1);
       }
 
+      // 완료 기록 저장
       setTaskCompletionRecord((prev) => ({
         ...prev,
         [taskKey]: true,
       }));
 
-      showInlineToast(`"${task.task}" 완료! +${randomPoints}P 적립`, "success");
-      updateSeasonalProgress(task);
-      saveTaskCompletionData();
-
+      // 포인트 추가
       if (typeof addPoints === "function") {
-        addPoints(randomPoints, "일정 완료");
+        await addPoints(totalPoints, "일정 완료");
       }
+
+      showInlineToast(`"${task.task}" 완료! +${totalPoints}P 적립`, "success");
+      updateSeasonalProgress(task);
+      await saveTaskCompletionData();
+
+      return true;
     } catch (error) {
       console.error("태스크 완료 처리 오류:", error);
+      return false;
     }
   };
 
-  const handleTaskUncompletion = (task) => {
-    const newTotalCompletedTasks = Math.max(0, totalCompletedTasks - 1);
-    setTotalCompletedTasks(newTotalCompletedTasks);
+  const handleTaskUncompletion = async (task) => {
+    try {
+      const todayStr = new Date().toISOString().split("T")[0];
+      const taskKey = `${task.task}_${task.startTime}_${task.endTime}_${todayStr}`;
 
-    const hour = parseInt(task.startTime.split(":")[0]);
-    if (hour < 12) {
-      const newMorningCount = Math.max(0, morningTasksCompleted - 1);
-      setMorningTasksCompleted(newMorningCount);
-    } else if (hour >= 18) {
-      const newEveningCount = Math.max(0, eveningTasksCompleted - 1);
-      setEveningTasksCompleted(newEveningCount);
+      // 완료 기록이 없으면 리턴
+      if (!taskCompletionRecord[taskKey]) {
+        console.log("완료되지 않은 일정:", taskKey);
+        return false;
+      }
+
+      // 포인트 차감 계산 (획득한 포인트만큼 차감)
+      const basePoints = 5;
+      const hour = parseInt(task.startTime.split(":")[0]);
+      let bonusPoints = 0;
+
+      if (hour < 7) bonusPoints += 3;
+      if (hour >= 22) bonusPoints += 2;
+
+      const totalPoints = basePoints + bonusPoints;
+
+      // 상태 업데이트
+      const newTotalCompletedTasks = Math.max(0, totalCompletedTasks - 1);
+      setTotalCompletedTasks(newTotalCompletedTasks);
+
+      if (hour < 12) {
+        const newMorningCount = Math.max(0, morningTasksCompleted - 1);
+        setMorningTasksCompleted(newMorningCount);
+      } else if (hour >= 18) {
+        const newEveningCount = Math.max(0, eveningTasksCompleted - 1);
+        setEveningTasksCompleted(newEveningCount);
+      }
+
+      // 완료 기록 삭제
+      setTaskCompletionRecord((prev) => {
+        const updated = { ...prev };
+        delete updated[taskKey];
+        return updated;
+      });
+
+      // 포인트 차감
+      if (typeof deductPoints === "function") {
+        await deductPoints(totalPoints, "일정 취소");
+      }
+
+      showInlineToast(`"${task.task}" 취소! -${totalPoints}P 차감`, "warning");
+      await saveTaskCompletionData();
+
+      return true;
+    } catch (error) {
+      console.error("태스크 취소 처리 오류:", error);
+      return false;
     }
-
-    saveTaskCompletionData();
   };
 
   const toggleTaskCompletion = useCallback(
@@ -443,26 +497,37 @@ export default function DailyScreen({ navigation }) {
       if (!task) return;
 
       try {
-        let isCurrentlyCompleted;
+        // 현재 완료 상태 확인
+        const isCurrentlyCompleted = completedTasks[taskId];
 
-        setCompletedTasks((prev) => {
-          isCurrentlyCompleted = prev[taskId];
-          return { ...prev, [taskId]: !isCurrentlyCompleted };
-        });
+        // UI 상태 즉시 업데이트 (더 나은 UX)
+        setCompletedTasks((prev) => ({
+          ...prev,
+          [taskId]: !isCurrentlyCompleted,
+        }));
 
-        setTimeout(async () => {
-          try {
-            if (!isCurrentlyCompleted) {
-              await handleTaskCompletion(task);
-            } else {
-              await handleTaskUncompletion(task);
-            }
-          } catch (innerError) {
-            console.error("태스크 상태 변경 내부 오류:", innerError);
-          }
-        }, 0);
+        // 비동기 처리
+        let success;
+        if (!isCurrentlyCompleted) {
+          success = await handleTaskCompletion(task);
+        } else {
+          success = await handleTaskUncompletion(task);
+        }
+
+        // 실패 시 상태 롤백
+        if (!success) {
+          setCompletedTasks((prev) => ({
+            ...prev,
+            [taskId]: isCurrentlyCompleted,
+          }));
+        }
       } catch (error) {
         console.error("태스크 상태 변경 오류:", error);
+        // 에러 시 상태 롤백
+        setCompletedTasks((prev) => ({
+          ...prev,
+          [taskId]: completedTasks[taskId],
+        }));
       }
     },
     [todaySchedules, completedTasks]
