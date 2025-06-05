@@ -1,28 +1,26 @@
 // src/screens/StudyTimerScreen.js
-import React, { useRef, useState, useEffect, useCallback } from "react";
+import { Ionicons } from "@expo/vector-icons";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import { format } from "date-fns";
+import * as ScreenOrientation from "expo-screen-orientation";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  View,
+  Animated,
+  Dimensions,
+  Easing,
+  FlatList,
+  Modal,
+  SafeAreaView,
+  StatusBar,
   Text,
   TouchableOpacity,
-  SafeAreaView,
-  Modal,
-  FlatList,
-  ScrollView,
-  Dimensions,
-  StatusBar,
-  Platform,
-  Animated,
-  Easing,
+  View,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import { format } from "date-fns";
-import { useNavigation } from "@react-navigation/native";
-import { usePlanner } from "../context/PlannerContext";
-import styles, { TIMER_METHODS } from "../styles/StudyTimerStyles";
-import { useTimerLogic } from "../hooks/useTimerLogic";
-import * as ScreenOrientation from "expo-screen-orientation";
 import { ToastEventSystem } from "../components/common/AutoToast";
-import { useFocusEffect } from "@react-navigation/native";
+import TimerControls from "../components/TimerControls";
+import { usePlanner } from "../context/PlannerContext";
+import { useTimerLogic } from "../hooks/useTimerLogic";
+import styles, { TIMER_METHODS } from "../styles/StudyTimerStyles";
 
 const StudyTimerScreen = () => {
   const navigation = useNavigation();
@@ -37,6 +35,8 @@ const StudyTimerScreen = () => {
   const [customSettings, setCustomSettings] = useState({
     workDuration: 45 * 60,
     breakDuration: 15 * 60,
+    questionCount: 100, // 문제 수
+    timePerQuestion: 15, // 문제당 시간(초)
   });
 
   const [isLandscape, setIsLandscape] = useState(false);
@@ -47,6 +47,9 @@ const StudyTimerScreen = () => {
   const [screenHeight, setScreenHeight] = useState(
     Dimensions.get("window").height
   );
+
+  const [showResultModal, setShowResultModal] = useState(false);
+  const [examResult, setExamResult] = useState(null);
 
   // 컴포넌트 내부 상태 선언 부분에 추가
   const [isDarkMode, setIsDarkMode] = useState(false);
@@ -159,33 +162,60 @@ const StudyTimerScreen = () => {
     timerState,
   ]);
 
-  // 메서드 선택 핸들러 - 커스터마이징 기능 추가
+  // handleMethodSelect 함수 수정
   const handleMethodSelect = (method) => {
-    setSelectedMethod(method);
+    if (method.isExamMode) {
+      const methodWithQuestions = {
+        ...method,
+        remainingQuestions: method.questionCount || 100,
+        workDuration: method.workDuration || 15,
+      };
+      setSelectedMethod(methodWithQuestions);
+
+      // 설정값도 올바르게 초기화
+      setCustomSettings({
+        ...customSettings,
+        questionCount: method.questionCount || 100,
+        timePerQuestion: method.workDuration || 15,
+      });
+    } else {
+      setSelectedMethod(method);
+      setCustomSettings({
+        ...customSettings,
+        workDuration: method.workDuration || 45 * 60,
+        breakDuration: method.breakDuration || 15 * 60,
+      });
+    }
     setShowMenuModal(false);
 
     // 커스터마이징 가능한 메서드인 경우 설정 모달 표시
     if (method.isCustomizable) {
-      setCustomSettings({
-        workDuration: method.workDuration,
-        breakDuration: method.breakDuration,
-      });
       setShowSettingsModal(true);
     }
   };
 
-  // 설정 저장 함수
+  // 3. 설정 저장 함수 수정
   const saveSettings = () => {
-    setSelectedMethod({
-      ...selectedMethod,
-      workDuration: customSettings.workDuration,
-      breakDuration: customSettings.breakDuration,
-    });
-    setTimeRemaining(customSettings.workDuration);
+    if (selectedMethod.isExamMode) {
+      const updatedMethod = {
+        ...selectedMethod,
+        workDuration: customSettings.timePerQuestion,
+        questionCount: customSettings.questionCount,
+        remainingQuestions: customSettings.questionCount,
+      };
+      setSelectedMethod(updatedMethod);
+      setTimeRemaining(customSettings.timePerQuestion);
+    } else {
+      setSelectedMethod({
+        ...selectedMethod,
+        workDuration: customSettings.workDuration,
+        breakDuration: customSettings.breakDuration,
+      });
+      setTimeRemaining(customSettings.workDuration);
+    }
     setShowSettingsModal(false);
   };
 
-  // 타이머 로직 커스텀 훅 사용
   const {
     timerState,
     timeRemaining,
@@ -194,22 +224,22 @@ const StudyTimerScreen = () => {
     sessionSubject,
     timerModeBeforePause,
     cycleLogRef,
-
+    remainingQuestions,
     startTimer,
     pauseTimer,
     stopTimer,
     resetTimer,
-
+    setTimeRemaining,
     formatTime,
     getTodayTotalStudyTime,
-
-    // 이 함수 추가
     activateKeepAwake,
   } = useTimerLogic(
     selectedMethod,
     selectedDate,
     recordStudySession,
-    studySessions
+    studySessions,
+    setShowResultModal,
+    setExamResult
   );
 
   // 화면 포커스/언포커스 처리 - 수정됨
@@ -291,6 +321,8 @@ const StudyTimerScreen = () => {
       Animated.timing(darkOverlayOpacity, {
         toValue: isFocusMode ? 1 : 0,
         ...animationConfig,
+        easing: Easing.inOut(Easing.cubic),
+        useNativeDriver: true,
       }),
 
       // 타이머 써클 배경색 애니메이션
@@ -364,79 +396,6 @@ const StudyTimerScreen = () => {
     setSelectedDate(format(new Date(), "yyyy-MM-dd"));
   }, [setSelectedDate]);
 
-  // 타이머 컨트롤 컴포넌트
-  const TimerControls = () => (
-    <View style={styles.timerControlsContainer}>
-      <View style={styles.timerControlsBar}>
-        {/* 시작/일시정지 버튼 */}
-        {timerState === "working" || timerState === "break" ? (
-          <TouchableOpacity
-            style={[
-              styles.controlButton,
-              { backgroundColor: selectedMethod.color },
-            ]}
-            onPress={pauseTimer}
-            hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="pause" size={24} color="#ffffff" />
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity
-            style={[
-              styles.controlButton,
-              { backgroundColor: selectedMethod.color },
-            ]}
-            onPress={startTimer}
-            hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="play" size={24} color="#ffffff" />
-          </TouchableOpacity>
-        )}
-
-        {/* 정지 버튼 */}
-        <TouchableOpacity
-          style={[
-            styles.controlButton,
-            {
-              backgroundColor: "#ff6b6b",
-              opacity: timerState !== "idle" ? 1 : 0,
-            },
-          ]}
-          onPress={stopTimer}
-          disabled={timerState === "idle"}
-          hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="stop" size={24} color="#ffffff" />
-        </TouchableOpacity>
-
-        {/* 전체화면 버튼 - 타이머가 동작 중일 때만 활성화 */}
-        {timerState === "working" || timerState === "break" ? (
-          <TouchableOpacity
-            style={[styles.controlButton, { backgroundColor: "#666" }]}
-            onPress={toggleLandscapeMode}
-            hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="scan-outline" size={24} color="#ffffff" />
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity
-            style={[
-              styles.controlButton,
-              { backgroundColor: "#666", opacity: 0 },
-            ]}
-            disabled={true}
-          >
-            <Ionicons name="scan-outline" size={24} color="#ffffff" />
-          </TouchableOpacity>
-        )}
-      </View>
-    </View>
-  );
-
   // 가로모드 렌더링 부분 수정
   if (isPureView) {
     return (
@@ -459,15 +418,17 @@ const StudyTimerScreen = () => {
             </Text>
             {timerState !== "idle" && (
               <Text style={styles.enhancedPureViewCycleText}>
-                사이클: {currentCycle}
+                {selectedMethod.isExamMode
+                  ? `${remainingQuestions}/${selectedMethod.questionCount} 문제`
+                  : `사이클: ${currentCycle}`}
               </Text>
             )}
           </View>
         </View>
 
-        {/* 세로모드 전환 버튼 - 수정됨 */}
+        {/* 세로모드 전환 버튼 */}
         <TouchableOpacity
-          style={styles.enhancedPureViewExitButton} // 더 눈에 띄는 새 스타일 사용
+          style={styles.enhancedPureViewExitButton}
           onPress={toggleLandscapeMode}
         >
           <Ionicons name="phone-portrait-outline" size={28} color="#ffffff" />
@@ -475,7 +436,9 @@ const StudyTimerScreen = () => {
 
         {/* 상단 정보 영역 */}
         <View style={styles.enhancedPureViewInfo}>
-          <Text style={styles.enhancedPureViewSubject}>{sessionSubject}</Text>
+          <Text style={styles.enhancedPureViewSubject}>
+            {selectedMethod.isExamMode ? "기출문제 풀이" : sessionSubject}
+          </Text>
           <Text style={styles.enhancedPureViewTotal}>
             총 공부시간: {getTodayTotalStudyTime()}
           </Text>
@@ -548,7 +511,7 @@ const StudyTimerScreen = () => {
               style={[
                 styles.timerText,
                 {
-                  color: isFocusMode ? "#ffffff" : selectedMethod.color, // 포커스 모드에서는 흰색으로
+                  color: isFocusMode ? "#ffffff" : selectedMethod.color,
                   fontWeight: "bold",
                 },
               ]}
@@ -559,10 +522,14 @@ const StudyTimerScreen = () => {
             <Text
               style={[
                 styles.timerLabel,
-                { color: isFocusMode ? "#ffffff" : "#666" }, // 포커스 모드에서는 흰색으로
+                { color: isFocusMode ? "#ffffff" : "#666" },
               ]}
             >
-              {timerState === "break" ? "휴식 시간" : "집중 시간"}
+              {selectedMethod.isExamMode && remainingQuestions !== undefined
+                ? `문제 ${remainingQuestions}`
+                : timerState === "break"
+                ? "휴식 시간"
+                : "집중 시간"}
             </Text>
 
             <View style={styles.cycleTextContainer}>
@@ -570,12 +537,16 @@ const StudyTimerScreen = () => {
                 style={[
                   styles.cycleText,
                   {
-                    color: isFocusMode ? "#dddddd" : "#666", // 포커스 모드에서는 밝은 회색으로
+                    color: isFocusMode ? "#dddddd" : "#666",
                     opacity: timerState !== "idle" ? 1 : 0,
                   },
                 ]}
               >
-                {timerState !== "idle"
+                {selectedMethod.isExamMode && selectedMethod.questionCount
+                  ? `${remainingQuestions || selectedMethod.questionCount}/${
+                      selectedMethod.questionCount
+                    } 문제` // 더 짧게 표현
+                  : timerState !== "idle"
                   ? `사이클: ${currentCycle}`
                   : "사이클: 1"}
               </Text>
@@ -594,7 +565,14 @@ const StudyTimerScreen = () => {
           },
         ]}
       >
-        <TimerControls />
+        <TimerControls
+          timerState={timerState}
+          selectedMethod={selectedMethod}
+          startTimer={startTimer}
+          pauseTimer={pauseTimer}
+          stopTimer={stopTimer}
+          toggleLandscapeMode={toggleLandscapeMode}
+        />
       </Animated.View>
 
       {/* 타이머 메서드 선택 모달 */}
@@ -628,11 +606,29 @@ const StudyTimerScreen = () => {
                       <TouchableOpacity
                         style={styles.iconButton}
                         onPress={() => {
-                          setSelectedMethod(item);
-                          setCustomSettings({
-                            workDuration: item.workDuration,
-                            breakDuration: item.breakDuration,
-                          });
+                          // 먼저 메서드 선택
+                          if (item.isExamMode) {
+                            const methodWithQuestions = {
+                              ...item,
+                              remainingQuestions: item.questionCount || 100,
+                              workDuration: item.workDuration || 20,
+                            };
+                            setSelectedMethod(methodWithQuestions);
+                            setCustomSettings({
+                              questionCount: item.questionCount || 100,
+                              timePerQuestion: item.workDuration || 20,
+                              workDuration: customSettings.workDuration,
+                              breakDuration: customSettings.breakDuration,
+                            });
+                          } else {
+                            setSelectedMethod(item);
+                            setCustomSettings({
+                              workDuration: item.workDuration || 45 * 60,
+                              breakDuration: item.breakDuration || 15 * 60,
+                              questionCount: customSettings.questionCount,
+                              timePerQuestion: customSettings.timePerQuestion,
+                            });
+                          }
                           setShowMenuModal(false);
                           setShowSettingsModal(true);
                         }}
@@ -658,7 +654,59 @@ const StudyTimerScreen = () => {
           </View>
         </View>
       </Modal>
+      {/* 기출문제 결과 모달 */}
+      <Modal visible={showResultModal} animationType="slide" transparent={true}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>📝 기출문제 풀이 결과</Text>
 
+            {examResult && (
+              <View style={styles.resultContainer}>
+                <View style={styles.resultItem}>
+                  <Text style={styles.resultLabel}>완료 문제</Text>
+                  <Text style={styles.resultValue}>
+                    {examResult.completedQuestions}/{examResult.totalQuestions}
+                    문제
+                  </Text>
+                </View>
+
+                <View style={styles.resultItem}>
+                  <Text style={styles.resultLabel}>총 소요 시간</Text>
+                  <Text style={styles.resultValue}>
+                    {formatTime(examResult.totalTime)}
+                  </Text>
+                </View>
+
+                <View style={styles.resultItem}>
+                  <Text style={styles.resultLabel}>문제당 평균 시간</Text>
+                  <Text style={styles.resultValue}>
+                    {formatTime(examResult.averageTime)}
+                  </Text>
+                </View>
+
+                <View style={styles.resultItem}>
+                  <Text style={styles.resultLabel}>완료율</Text>
+                  <Text style={styles.resultValue}>
+                    {Math.round(
+                      (examResult.completedQuestions /
+                        examResult.totalQuestions) *
+                        100
+                    )}
+                    %
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={() => setShowResultModal(false)}
+            >
+              <Text style={styles.closeButtonText}>확인</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
       {/* 설정 모달 추가 */}
       <Modal
         visible={showSettingsModal}
@@ -669,73 +717,199 @@ const StudyTimerScreen = () => {
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>타이머 설정</Text>
 
-            <View style={styles.settingItem}>
-              <Text style={styles.settingLabel}>집중 시간 (분)</Text>
-              <View style={styles.settingButtonGroup}>
-                <TouchableOpacity
-                  style={styles.settingButton}
-                  onPress={() => {
-                    setCustomSettings({
-                      ...customSettings,
-                      workDuration: Math.max(
-                        5 * 60,
-                        customSettings.workDuration - 5 * 60
-                      ),
-                    });
-                  }}
-                >
-                  <Text style={styles.settingButtonText}>-5</Text>
-                </TouchableOpacity>
-                <Text style={styles.settingValue}>
-                  {Math.floor(customSettings.workDuration / 60)}
-                </Text>
-                <TouchableOpacity
-                  style={styles.settingButton}
-                  onPress={() => {
-                    setCustomSettings({
-                      ...customSettings,
-                      workDuration: customSettings.workDuration + 5 * 60,
-                    });
-                  }}
-                >
-                  <Text style={styles.settingButtonText}>+5</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
+            {selectedMethod.isExamMode ? (
+              // 기출문제 모드 설정
+              <>
+                <View style={styles.settingItem}>
+                  <Text style={styles.settingLabel}>문제 수</Text>
+                  <View style={styles.settingButtonGroup}>
+                    <TouchableOpacity
+                      style={styles.settingButton}
+                      onPress={() => {
+                        setCustomSettings({
+                          ...customSettings,
+                          questionCount: Math.max(
+                            1,
+                            customSettings.questionCount - 5
+                          ),
+                        });
+                      }}
+                    >
+                      <Text style={styles.settingButtonText}>-5</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.settingButton}
+                      onPress={() => {
+                        setCustomSettings({
+                          ...customSettings,
+                          questionCount: Math.max(
+                            1,
+                            customSettings.questionCount - 1
+                          ),
+                        });
+                      }}
+                    >
+                      <Text style={styles.settingButtonText}>-1</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.settingValue}>
+                      {customSettings.questionCount}
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.settingButton}
+                      onPress={() => {
+                        setCustomSettings({
+                          ...customSettings,
+                          questionCount: customSettings.questionCount + 1,
+                        });
+                      }}
+                    >
+                      <Text style={styles.settingButtonText}>+1</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.settingButton}
+                      onPress={() => {
+                        setCustomSettings({
+                          ...customSettings,
+                          questionCount: customSettings.questionCount + 5,
+                        });
+                      }}
+                    >
+                      <Text style={styles.settingButtonText}>+5</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
 
-            <View style={styles.settingItem}>
-              <Text style={styles.settingLabel}>휴식 시간 (분)</Text>
-              <View style={styles.settingButtonGroup}>
-                <TouchableOpacity
-                  style={styles.settingButton}
-                  onPress={() => {
-                    setCustomSettings({
-                      ...customSettings,
-                      breakDuration: Math.max(
-                        1 * 60,
-                        customSettings.breakDuration - 1 * 60
-                      ),
-                    });
-                  }}
-                >
-                  <Text style={styles.settingButtonText}>-1</Text>
-                </TouchableOpacity>
-                <Text style={styles.settingValue}>
-                  {Math.floor(customSettings.breakDuration / 60)}
-                </Text>
-                <TouchableOpacity
-                  style={styles.settingButton}
-                  onPress={() => {
-                    setCustomSettings({
-                      ...customSettings,
-                      breakDuration: customSettings.breakDuration + 1 * 60,
-                    });
-                  }}
-                >
-                  <Text style={styles.settingButtonText}>+1</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
+                <View style={styles.settingItem}>
+                  <Text style={styles.settingLabel}>문제당 시간 (초)</Text>
+                  <View style={styles.settingButtonGroup}>
+                    <TouchableOpacity
+                      style={styles.settingButton}
+                      onPress={() => {
+                        setCustomSettings({
+                          ...customSettings,
+                          timePerQuestion: Math.max(
+                            1,
+                            customSettings.timePerQuestion - 5
+                          ),
+                        });
+                      }}
+                    >
+                      <Text style={styles.settingButtonText}>-5</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.settingButton}
+                      onPress={() => {
+                        setCustomSettings({
+                          ...customSettings,
+                          timePerQuestion: Math.max(
+                            1,
+                            customSettings.timePerQuestion - 1
+                          ),
+                        });
+                      }}
+                    >
+                      <Text style={styles.settingButtonText}>-1</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.settingValue}>
+                      {customSettings.timePerQuestion}
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.settingButton}
+                      onPress={() => {
+                        setCustomSettings({
+                          ...customSettings,
+                          timePerQuestion: customSettings.timePerQuestion + 1,
+                        });
+                      }}
+                    >
+                      <Text style={styles.settingButtonText}>+1</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.settingButton}
+                      onPress={() => {
+                        setCustomSettings({
+                          ...customSettings,
+                          timePerQuestion: customSettings.timePerQuestion + 5,
+                        });
+                      }}
+                    >
+                      <Text style={styles.settingButtonText}>+5</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </>
+            ) : (
+              // 일반 타이머 설정
+              <>
+                <View style={styles.settingItem}>
+                  <Text style={styles.settingLabel}>집중 시간 (분)</Text>
+                  <View style={styles.settingButtonGroup}>
+                    <TouchableOpacity
+                      style={styles.settingButton}
+                      onPress={() => {
+                        setCustomSettings({
+                          ...customSettings,
+                          workDuration: Math.max(
+                            5 * 60,
+                            customSettings.workDuration - 5 * 60
+                          ),
+                        });
+                      }}
+                    >
+                      <Text style={styles.settingButtonText}>-5</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.settingValue}>
+                      {Math.floor(customSettings.workDuration / 60)}
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.settingButton}
+                      onPress={() => {
+                        setCustomSettings({
+                          ...customSettings,
+                          workDuration: customSettings.workDuration + 5 * 60,
+                        });
+                      }}
+                    >
+                      <Text style={styles.settingButtonText}>+5</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                <View style={styles.settingItem}>
+                  <Text style={styles.settingLabel}>휴식 시간 (분)</Text>
+                  <View style={styles.settingButtonGroup}>
+                    <TouchableOpacity
+                      style={styles.settingButton}
+                      onPress={() => {
+                        setCustomSettings({
+                          ...customSettings,
+                          breakDuration: Math.max(
+                            1 * 60,
+                            customSettings.breakDuration - 1 * 60
+                          ),
+                        });
+                      }}
+                    >
+                      <Text style={styles.settingButtonText}>-1</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.settingValue}>
+                      {Math.floor(customSettings.breakDuration / 60)}
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.settingButton}
+                      onPress={() => {
+                        setCustomSettings({
+                          ...customSettings,
+                          breakDuration: customSettings.breakDuration + 1 * 60,
+                        });
+                      }}
+                    >
+                      <Text style={styles.settingButtonText}>+1</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </>
+            )}
 
             <View style={styles.modalButtons}>
               <TouchableOpacity

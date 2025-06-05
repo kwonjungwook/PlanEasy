@@ -1,14 +1,16 @@
 // src/hooks/useTimerLogic.js
-import { useState, useRef, useEffect, useCallback } from "react";
 import { format } from "date-fns";
-import { ToastEventSystem } from "../components/common/AutoToast";
 import * as KeepAwake from "expo-keep-awake";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ToastEventSystem } from "../components/common/AutoToast";
 
 export const useTimerLogic = (
   selectedMethod,
   selectedDate,
   recordStudySession,
-  studySessions
+  studySessions,
+  setShowResultModal, // 추가
+  setExamResult // 추가
 ) => {
   // 타이머 상태
   const [timeRemaining, setTimeRemaining] = useState(
@@ -19,6 +21,16 @@ export const useTimerLogic = (
   const [currentCycle, setCurrentCycle] = useState(1);
   const [sessionSubject, setSessionSubject] = useState("공부시간");
   const [timerModeBeforePause, setTimerModeBeforePause] = useState("working");
+
+  // 기출문제 모드 관련 상태 추가
+  const [remainingQuestions, setRemainingQuestions] = useState(
+    selectedMethod.remainingQuestions || selectedMethod.questionCount || 0
+  );
+  const remainingQuestionsRef = useRef(remainingQuestions);
+
+  useEffect(() => {
+    remainingQuestionsRef.current = remainingQuestions;
+  }, [remainingQuestions]);
 
   // 참조 값
   const timerRef = useRef(null);
@@ -81,93 +93,17 @@ export const useTimerLogic = (
     setTimeRemaining(selectedMethod.workDuration);
     setElapsedTime(0);
     setCurrentCycle(1);
+
+    // 기출문제 모드인 경우 남은 문제 수 초기화
+    if (selectedMethod.isExamMode) {
+      const initialQuestions =
+        selectedMethod.remainingQuestions ||
+        selectedMethod.questionCount ||
+        100;
+      setRemainingQuestions(initialQuestions);
+      console.log("기출문제 모드 초기화:", initialQuestions);
+    }
   }, [selectedMethod]);
-
-  // 타이머 시작
-  const startTimer = useCallback(() => {
-    if (timerState === "idle" || timerState === "paused") {
-      // 경과 시간 계산을 위한 시작 시간
-      const startTime = Date.now() - elapsedTime * 1000;
-      startTimeRef.current = startTime;
-
-      // 타이머 상태 설정 - 일시정지 후 재개 시 이전 상태 복원
-      let newState;
-      if (timerState === "paused") {
-        newState = timerModeBeforePause;
-      } else {
-        newState = "working";
-      }
-
-      setTimerState(newState);
-
-      // 사이클 로그 추가
-      if (
-        newState === "working" &&
-        (timerState === "idle" ||
-          (timerState === "paused" &&
-            timeRemaining === selectedMethod.workDuration))
-      ) {
-        const currentTime = new Date().toLocaleTimeString();
-        cycleLogRef.current.push(`사이클 ${currentCycle} 시작: ${currentTime}`);
-      }
-
-      // 타이머 시작
-      timerRef.current = setInterval(() => {
-        // 경과 시간 계산
-        const elapsed = Math.floor((Date.now() - startTime) / 1000);
-        setElapsedTime(elapsed);
-
-        // 현재 단계 시간 (작업 또는 휴식)
-        const currentPhaseDuration =
-          newState === "working"
-            ? selectedMethod.workDuration
-            : selectedMethod.breakDuration;
-
-        // 남은 시간 계산
-        const remaining = Math.max(0, currentPhaseDuration - elapsed);
-        setTimeRemaining(remaining);
-
-        // 단계 완료 처리
-        if (remaining <= 0) {
-          clearInterval(timerRef.current);
-
-          if (newState === "working") {
-            // 작업 완료 -> 휴식 시간
-            handleWorkCompleted(elapsed);
-          } else {
-            // 휴식 완료 -> 다음 작업 시간
-            handleBreakCompleted();
-          }
-        }
-      }, 1000);
-    }
-  }, [
-    timerState,
-    elapsedTime,
-    timerModeBeforePause,
-    currentCycle,
-    timeRemaining,
-    selectedMethod,
-  ]);
-
-  // 일시정지
-  const pauseTimer = useCallback(() => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-
-      // 일시정지 전 상태 저장
-      setTimerModeBeforePause(timerState);
-
-      // 상태를 일시정지로 변경
-      setTimerState("paused");
-
-      // 일시정지 로그 추가
-      const currentTime = new Date().toLocaleTimeString();
-      cycleLogRef.current.push(
-        `사이클 ${currentCycle} 일시정지: ${currentTime}`
-      );
-    }
-  }, [timerState, currentCycle]);
 
   // 작업 완료 처리
   const handleWorkCompleted = useCallback(
@@ -221,7 +157,7 @@ export const useTimerLogic = (
     [currentCycle, selectedMethod]
   );
 
-  // 휴식 완료 처리
+  // 휴식 완료 처리 - 순서 조정
   const handleBreakCompleted = useCallback(() => {
     // 휴식 완료 로그
     const currentTime = new Date().toLocaleTimeString();
@@ -244,49 +180,7 @@ export const useTimerLogic = (
     startTimer();
   }, [currentCycle, selectedMethod]);
 
-  // 타이머 정지 및 세션 저장
-  const stopTimer = useCallback(() => {
-    if (timerState !== "idle") {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-
-      // 현재 타이머 상태에 따라 총 시간 누적
-      if (
-        timerState === "working" ||
-        (timerState === "paused" && timerModeBeforePause === "working")
-      ) {
-        totalElapsedRef.current += elapsedTime;
-        console.log(
-          `타이머 종료: 작업 중 상태, 총 시간에 ${elapsedTime}초 추가, 총 ${totalElapsedRef.current}초`
-        );
-      } else {
-        console.log(
-          `타이머 종료: 휴식 중 상태, 총 시간 ${totalElapsedRef.current}초 유지`
-        );
-      }
-
-      // 종료 로그 추가
-      const currentTime = new Date().toLocaleTimeString();
-      cycleLogRef.current.push(`사이클 ${currentCycle} 종료: ${currentTime}`);
-
-      // 최소 10초 이상일 때만 저장
-      if (totalElapsedRef.current >= 10) {
-        console.log(
-          `종료 시 총 공부시간(${formatTime(totalElapsedRef.current)}) 저장`
-        );
-        saveSessionSilently();
-      } else {
-        console.log("10초 미만의 세션은 저장하지 않습니다.");
-        resetTimer();
-      }
-
-      ToastEventSystem.showToast("타이머가 종료되었습니다", 1500);
-    }
-  }, [timerState, timerModeBeforePause, elapsedTime, currentCycle]);
-
-  // 타이머 리셋
+  // 타이머 리셋 - 함수 선언 순서 조정
   const resetTimer = useCallback(() => {
     if (timerRef.current) {
       clearInterval(timerRef.current);
@@ -298,7 +192,202 @@ export const useTimerLogic = (
     setTimerModeBeforePause("working");
     totalElapsedRef.current = 0;
     cycleLogRef.current = [];
+
+    // 기출문제 모드인 경우 남은 문제 수 리셋
+    if (selectedMethod.isExamMode) {
+      setRemainingQuestions(selectedMethod.questionCount);
+    }
   }, [selectedMethod]);
+
+  // 기출문제 완료 처리 추가
+  const handleExamQuestionCompleted = useCallback(
+    (questionTime) => {
+      // 총 시간 누적
+      totalElapsedRef.current += questionTime;
+
+      // 현재 남은 문제 수 확인을 위한 로그 추가
+      console.log("현재 남은 문제 수:", remainingQuestionsRef.current);
+
+      if (remainingQuestionsRef.current > 1) {
+        // 남은 문제가 있다면 다음 문제로
+        const newRemaining = remainingQuestionsRef.current - 1;
+        remainingQuestionsRef.current = newRemaining;
+        setRemainingQuestions(newRemaining);
+        setTimeRemaining(selectedMethod.workDuration);
+        setElapsedTime(0);
+        startTimeRef.current = Date.now();
+
+        // 로그 수정
+        const currentTime = new Date().toLocaleTimeString();
+        const currentQuestionNumber =
+          selectedMethod.questionCount - newRemaining + 1;
+        cycleLogRef.current.push(
+          `문제 ${currentQuestionNumber} 완료: ${currentTime} (${formatTime(
+            questionTime
+          )})`
+        );
+
+        // 토스트 메시지 표시
+        ToastEventSystem.showToast(
+          `다음 문제로 이동 (${newRemaining}문제 남음)`,
+          1500
+        );
+
+        // 다음 문제 타이머 시작
+        setTimerState("working");
+        timerRef.current = setInterval(() => {
+          const elapsed = Math.floor(
+            (Date.now() - startTimeRef.current) / 1000
+          );
+          const remaining = Math.max(0, selectedMethod.workDuration - elapsed);
+
+          setTimeRemaining(remaining);
+          setElapsedTime(elapsed);
+
+          if (remaining <= 0) {
+            clearInterval(timerRef.current);
+            handleExamQuestionCompleted(elapsed);
+          }
+        }, 1000);
+      } else {
+        // 마지막 문제 완료
+        setRemainingQuestions(0);
+        remainingQuestionsRef.current = 0;
+        const currentTime = new Date().toLocaleTimeString();
+        const averageTime = Math.round(
+          totalElapsedRef.current / selectedMethod.questionCount
+        );
+
+        // 결과 데이터 설정
+        const resultData = {
+          completedQuestions: selectedMethod.questionCount,
+          totalQuestions: selectedMethod.questionCount,
+          totalTime: totalElapsedRef.current,
+          averageTime: averageTime,
+        };
+
+        setExamResult(resultData);
+        setShowResultModal(true);
+
+        cycleLogRef.current.push(
+          `모든 문제 완료: ${currentTime} - 총 시간: ${formatTime(
+            totalElapsedRef.current
+          )}, 평균: ${formatTime(averageTime)}/문제`
+        );
+
+        // stopTimer 호출 제거 (중복 결과 표시 방지)
+        setTimeout(() => {
+          resetTimer();
+        }, 100);
+      }
+    },
+    [selectedMethod, setExamResult, setShowResultModal, resetTimer]
+  );
+
+  // 타이머 시작
+  const startTimer = useCallback(() => {
+    if (timerState === "idle" || timerState === "paused") {
+      // 경과 시간 계산을 위한 시작 시간
+      const startTime = Date.now() - elapsedTime * 1000;
+      startTimeRef.current = startTime;
+
+      // 타이머 상태 설정 - 일시정지 후 재개 시 이전 상태 복원
+      let newState;
+      if (timerState === "paused") {
+        newState = timerModeBeforePause;
+      } else {
+        newState = "working";
+      }
+
+      setTimerState(newState);
+
+      // 기출문제 모드 로그
+      if (selectedMethod.isExamMode && timerState === "idle") {
+        const currentTime = new Date().toLocaleTimeString();
+        cycleLogRef.current.push(
+          `기출문제 시작: ${currentTime} - 총 ${selectedMethod.questionCount}문제`
+        );
+      } else if (
+        newState === "working" &&
+        (timerState === "idle" ||
+          (timerState === "paused" &&
+            timeRemaining === selectedMethod.workDuration))
+      ) {
+        const currentTime = new Date().toLocaleTimeString();
+        cycleLogRef.current.push(`사이클 ${currentCycle} 시작: ${currentTime}`);
+      }
+
+      // 타이머 시작
+      timerRef.current = setInterval(() => {
+        // 경과 시간 계산
+        const elapsed = Math.floor((Date.now() - startTime) / 1000);
+        setElapsedTime(elapsed);
+
+        // 현재 단계 시간 (작업 또는 휴식)
+        const currentPhaseDuration =
+          newState === "working"
+            ? selectedMethod.workDuration
+            : selectedMethod.breakDuration;
+
+        // 남은 시간 계산
+        const remaining = Math.max(0, currentPhaseDuration - elapsed);
+        setTimeRemaining(remaining);
+
+        // 단계 완료 처리
+        if (remaining <= 0) {
+          clearInterval(timerRef.current);
+
+          // 기출문제 모드 특별 처리
+          if (selectedMethod.isExamMode && newState === "working") {
+            handleExamQuestionCompleted(elapsed);
+          } else if (newState === "working") {
+            // 작업 완료 -> 휴식 시간
+            handleWorkCompleted(elapsed);
+          } else {
+            // 휴식 완료 -> 다음 작업 시간
+            handleBreakCompleted();
+          }
+        }
+      }, 1000);
+    }
+  }, [
+    timerState,
+    elapsedTime,
+    timerModeBeforePause,
+    currentCycle,
+    timeRemaining,
+    selectedMethod,
+    handleExamQuestionCompleted,
+    handleWorkCompleted,
+    handleBreakCompleted,
+  ]);
+
+  // 일시정지
+  const pauseTimer = useCallback(() => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+
+      // 일시정지 전 상태 저장
+      setTimerModeBeforePause(timerState);
+
+      // 상태를 일시정지로 변경
+      setTimerState("paused");
+
+      // 일시정지 로그 추가
+      const currentTime = new Date().toLocaleTimeString();
+      if (selectedMethod.isExamMode) {
+        cycleLogRef.current.push(
+          `문제 ${
+            selectedMethod.questionCount - remainingQuestions + 1
+          } 일시정지: ${currentTime}`
+        );
+      } else {
+        cycleLogRef.current.push(
+          `사이클 ${currentCycle} 일시정지: ${currentTime}`
+        );
+      }
+    }
+  }, [timerState, currentCycle, selectedMethod, remainingQuestions]);
 
   // 세션 자동 저장
   const saveSessionSilently = useCallback(() => {
@@ -314,6 +403,12 @@ export const useTimerLogic = (
           notes: cycleLogRef.current.join("\n"),
           timestamp: new Date().toISOString(),
           cycles: currentCycle,
+          // 기출문제 모드인 경우 추가 정보
+          ...(selectedMethod.isExamMode && {
+            questionCount: selectedMethod.questionCount,
+            completedQuestions:
+              selectedMethod.questionCount - remainingQuestions,
+          }),
         };
 
         // 세션 저장
@@ -340,6 +435,72 @@ export const useTimerLogic = (
     selectedMethod,
     currentCycle,
     sessionSubject,
+    resetTimer,
+    remainingQuestions,
+  ]);
+
+  // 타이머 정지 및 세션 저장
+  const stopTimer = useCallback(() => {
+    if (timerState !== "idle") {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+
+      // 현재 타이머 상태에 따라 총 시간 누적
+      if (
+        timerState === "working" ||
+        (timerState === "paused" && timerModeBeforePause === "working")
+      ) {
+        totalElapsedRef.current += elapsedTime;
+      }
+
+      // 종료 로그 추가
+      const currentTime = new Date().toLocaleTimeString();
+      if (selectedMethod.isExamMode) {
+        cycleLogRef.current.push(`기출문제 종료: ${currentTime}`);
+      } else {
+        cycleLogRef.current.push(`사이클 ${currentCycle} 종료: ${currentTime}`);
+      }
+
+      // 기출문제 모드일 때 결과 표시
+      if (selectedMethod.isExamMode) {
+        const completedQuestions =
+          selectedMethod.questionCount - remainingQuestionsRef.current;
+        const averageTimePerQuestion =
+          completedQuestions > 0
+            ? Math.round(totalElapsedRef.current / completedQuestions)
+            : 0;
+
+        const resultData = {
+          completedQuestions,
+          totalQuestions: selectedMethod.questionCount,
+          totalTime: totalElapsedRef.current,
+          averageTime: averageTimePerQuestion,
+        };
+
+        setExamResult(resultData);
+        setShowResultModal(true);
+      } else {
+        ToastEventSystem.showToast("타이머가 종료되었습니다", 1500);
+      }
+
+      // 최소 10초 이상일 때만 저장
+      if (totalElapsedRef.current >= 10) {
+        saveSessionSilently();
+      } else {
+        resetTimer();
+      }
+    }
+  }, [
+    timerState,
+    timerModeBeforePause,
+    elapsedTime,
+    currentCycle,
+    selectedMethod,
+    setShowResultModal,
+    setExamResult,
+    saveSessionSilently,
     resetTimer,
   ]);
 
@@ -426,6 +587,7 @@ export const useTimerLogic = (
     timerModeBeforePause,
     cycleLogRef,
     totalElapsedRef,
+    remainingQuestions,
 
     // 액션
     startTimer,
@@ -433,13 +595,15 @@ export const useTimerLogic = (
     stopTimer,
     resetTimer,
     setSessionSubject,
+    setRemainingQuestions,
 
     // 유틸리티
     formatTime,
     formatLongTime,
     getTodayTotalStudyTime,
+    setTimeRemaining,
 
-    // 화면 켜짐 관련 함수 추가 - 필요할 경우 외부에서 직접 사용 가능
+    // 화면 켜짐 관련 함수
     activateKeepAwake,
     deactivateKeepAwake,
   };

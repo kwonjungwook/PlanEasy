@@ -61,34 +61,6 @@ export const TIMER_METHODS = [
   - 작업과 휴식의 균형을 중요시하는 분`,
   },
   {
-    id: "90-15",
-    name: "90분 집중법",
-    description: "90분 집중, 15분 휴식",
-    workDuration: 90 * 60,
-    breakDuration: 15 * 60,
-    color: "#FF9671",
-    isFree: false,
-    price: 500,
-    detailedInfo: `90분 집중법은 인간의 자연적인 집중력 주기를 최대한 활용하는 방법입니다.
-  
-  📌 기본 구조
-  - 90분 동안 한 가지 작업에 깊이 집중
-  - 15분 충분한 휴식
-  - 반복적으로 사이클 진행
-  
-  📌 효과
-  - 깊은 몰입: 충분한 시간으로 복잡한 문제에 깊게 몰입 가능
-  - 인간 생체리듬 활용: 뇌의 자연적 집중 주기에 맞춘 작업
-  - 충분한 작업량: 한 번에 의미 있는 성과 달성 가능
-  - 효율적 기억 형성: 한 주제에 충분히 노출되어 장기 기억으로 전환 유리
-  
-  📌 추천 대상
-  - 복잡한 문제 해결이 필요한 분
-  - 깊은 사고가 필요한 작업을 하는 분
-  - 짧은 시간에 집중하기 어려운 분
-  - 충분한 깊이의 학습을 원하는 분`,
-  },
-  {
     id: "ultradian",
     name: "울트라디안 리듬",
     description: "90분 집중, 20분 휴식으로 생체 리듬 활용",
@@ -151,63 +123,36 @@ export const TIMER_METHODS = [
   - 기억력 향상을 원하는 분`,
   },
   {
-    id: "timeboxing",
-    name: "타임박싱",
-    description: "일정 시간동안 한 작업에 집중",
-    workDuration: 50 * 60,
-    breakDuration: 10 * 60,
+    id: "exam",
+    name: "기출문제 풀이",
+    description: "문제별 시간 설정",
+    workDuration: 20, // 기본값 20초
+    questionCount: 100, // 기본 문제 수
+    remainingQuestions: 100, // 초기값 추가
+    isExamMode: true,
+    color: "#FF9671",
+    isFree: false,
+    price: 500,
     isCustomizable: true,
-    color: "#43919B",
-    isFree: false, // 유료
-    price: 500, // 가격 설정
-    detailedInfo: `타임박싱은 특정 작업에 정해진 시간을 할당하여 효율적으로 일정을 관리하는 기법입니다.
+    detailedInfo: `기출문제 풀이 타이머는 시험 준비에 최적화된 특별한 타이머입니다.
   
   📌 기본 구조
-  - 작업마다 구체적인 시간 블록 할당
-  - 할당된 시간 내에 작업 완료를 목표
-  - 작업 후 짧은 휴식 시간
-  - 다음 작업으로 이동
+  - 문제 수와 문제당 시간을 자유롭게 설정
+  - 각 문제를 풀 때마다 자동으로 다음 문제로 전환
+  - 남은 문제 수를 실시간으로 확인
+  - 전체 진행 상황 추적 가능
   
   📌 효과
-  - 시간 관리 향상: 작업별 명확한 시간 할당으로 계획성 강화
-  - 파킨슨의 법칙 방지: "작업은 주어진 시간을 채우는 경향이 있다"는 법칙 극복
-  - 우선순위 명확화: 중요한 작업에 적절한 시간 배분
-  - 과잉 완벽주의 방지: 시간 제약으로 적절한 완성도 추구
+  - 시간 관리 능력 향상: 문제당 정해진 시간 내에 풀이하는 연습
+  - 실전 감각 향상: 실제 시험과 유사한 환경에서 연습
+  - 집중력 유지: 시간 제한으로 인한 적절한 긴장감 유지
+  - 진도 파악: 남은 문제 수를 실시간으로 확인
   
   📌 추천 대상
-  - 여러 과목이나 프로젝트를 병행하는 학생
-  - 시간 관리가 필요한 직장인
-  - 할 일이 많아 우선순위 설정이 필요한 분
-  - 작업별 균형 잡힌 시간 배분이 필요한 분`,
-  },
-  {
-    id: "flowtime",
-    name: "플로우타임",
-    description: "집중이 끊길 때까지 작업 후 휴식",
-    workDuration: 60 * 60,
-    breakCalculation: (workTime) => Math.min(Math.floor(workTime / 5), 30 * 60),
-    color: "#5D8BF4",
-    showElapsed: true,
-    isFree: false, // 유료
-    price: 500, // 가격 설정
-    detailedInfo: `플로우타임 기법은 포모도로 기법의 대안으로, 자연스러운 작업 흐름과 상태를 존중하는 방식입니다.
-  
-  📌 기본 구조
-  - 시간 제한 없이 집중력이 자연스럽게 떨어질 때까지 작업
-  - 집중 시간에 비례하여 휴식 시간 설정 (일반적으로 집중 시간의 1/5)
-  - 휴식 후 다시 작업 시작
-  
-  📌 효과
-  - 몰입 상태(Flow) 유지: 인위적인 타이머로 몰입이 방해받지 않음
-  - 개인화된 리듬: 자신의 집중력 패턴에 맞춘 작업
-  - 자연스러운 작업 전환: 작업이 완료되는 시점에 맞춰 휴식
-  - 낮은 스트레스: 시간 제약에 따른 압박감 감소
-  
-  📌 추천 대상
-  - 몰입 상태가 쉽게 형성되는 분
-  - 포모도로의 시간 제약이 불편하신 분
-  - 작업의 종류에 따라 집중 시간이 크게 달라지는 분
-  - 창의적인 작업을 주로 하는 분`,
+  - 공인 시험(토익, 공무원 등)을 준비하는 수험생
+  - 시간 제한이 있는 시험을 준비하는 학생
+  - 문제 풀이 속도를 향상시키고 싶은 분
+  - 실전 감각을 키우고 싶은 분`,
   },
   {
     id: "custom",
@@ -399,12 +344,15 @@ export const enhancedPureViewStyles = StyleSheet.create({
     textShadowColor: "rgba(0, 0, 0, 0.5)",
     textShadowOffset: { width: 1, height: 1 },
     textShadowRadius: 4,
+    textAlign: "center", // 추가
   },
   enhancedPureViewCycleText: {
-    fontSize: 16,
+    fontSize: 18, // 16에서 18로 증가
     color: "#cccccc",
-    marginTop: 6,
+    marginTop: 8, // 6에서 8로 증가
+    textAlign: "center",
   },
+
   enhancedPureViewModeButton: {
     position: "absolute",
     bottom: 25,
@@ -539,27 +487,28 @@ export const updatedContainerStyles = StyleSheet.create({
   },
 
   timerContentContainer: {
-    width: "100%",
-    alignItems: "center",
     justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: 10, // 패딩 추가
   },
 
   cycleTextContainer: {
-    height: 24,
+    minHeight: 35, // 높이를 더 늘림
     justifyContent: "center",
     alignItems: "center",
     marginTop: 5,
+    paddingVertical: 5, // 패딩 추가
   },
 
   timerCircle: {
-    width: 250,
-    height: 250,
-    borderRadius: 125,
+    width: 260, // 250에서 260으로 증가
+    height: 260, // 250에서 260으로 증가
+    borderRadius: 130, // 125에서 130으로 증가
     borderWidth: 8,
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: "rgba(255, 255, 255, 0.8)",
-    minHeight: 250,
+    minHeight: 260, // 250에서 260으로 증가
   },
 
   timerText: {
@@ -572,13 +521,13 @@ export const updatedContainerStyles = StyleSheet.create({
     fontSize: 16,
     color: "#666",
     marginTop: 8,
+    textAlign: "center",
   },
-
   cycleText: {
-    fontSize: 16,
-    marginTop: 8,
+    fontSize: 14,
     color: "#666",
-    height: 20,
+    textAlign: "center",
+    lineHeight: 20, // 줄 높이 추가
   },
 });
 
@@ -997,6 +946,30 @@ export const infoModalStyles = StyleSheet.create({
   },
 });
 
+// 결과 모달 스타일
+export const resultModalStyles = StyleSheet.create({
+  resultContainer: {
+    marginVertical: 20,
+  },
+  resultItem: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  resultLabel: {
+    fontSize: 16,
+    color: "#666",
+  },
+  resultValue: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: "#333",
+  },
+});
+
 // 구독 관련 스타일
 export const subscriptionStyles = StyleSheet.create({
   subscriptionBanner: {
@@ -1238,6 +1211,7 @@ export const styles = StyleSheet.create({
   ...purchaseModalStyles,
   ...componentStyles,
   ...newLayoutStyles,
+  ...resultModalStyles, // 추가
   centerTimerContainer: {
     flex: 1,
     justifyContent: "flex-start", // 중앙에서 위쪽으로 변경
