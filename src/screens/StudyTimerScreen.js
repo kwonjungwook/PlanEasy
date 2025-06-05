@@ -30,6 +30,8 @@ const StudyTimerScreen = () => {
 
   const [selectedMethod, setSelectedMethod] = useState(TIMER_METHODS[0]);
   const [showMenuModal, setShowMenuModal] = useState(false);
+  const [showInfoModal, setShowInfoModal] = useState(false);
+  const [selectedMethodInfo, setSelectedMethodInfo] = useState(null);
 
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [customSettings, setCustomSettings] = useState({
@@ -161,6 +163,12 @@ const StudyTimerScreen = () => {
     navigation,
     timerState,
   ]);
+
+  // 공부법 정보 모달 열기 함수 추가
+  const showMethodInfo = (method) => {
+    setSelectedMethodInfo(method);
+    setShowInfoModal(true);
+  };
 
   // handleMethodSelect 함수 수정
   const handleMethodSelect = (method) => {
@@ -601,45 +609,59 @@ const StudyTimerScreen = () => {
                       </Text>
                     </View>
 
-                    {/* 커스터마이징 설정 버튼 추가 */}
-                    {item.isCustomizable && (
+                    <View style={styles.menuItemControls}>
+                      {/* 정보 보기 버튼 추가 */}
                       <TouchableOpacity
                         style={styles.iconButton}
-                        onPress={() => {
-                          // 먼저 메서드 선택
-                          if (item.isExamMode) {
-                            const methodWithQuestions = {
-                              ...item,
-                              remainingQuestions: item.questionCount || 100,
-                              workDuration: item.workDuration || 20,
-                            };
-                            setSelectedMethod(methodWithQuestions);
-                            setCustomSettings({
-                              questionCount: item.questionCount || 100,
-                              timePerQuestion: item.workDuration || 20,
-                              workDuration: customSettings.workDuration,
-                              breakDuration: customSettings.breakDuration,
-                            });
-                          } else {
-                            setSelectedMethod(item);
-                            setCustomSettings({
-                              workDuration: item.workDuration || 45 * 60,
-                              breakDuration: item.breakDuration || 15 * 60,
-                              questionCount: customSettings.questionCount,
-                              timePerQuestion: customSettings.timePerQuestion,
-                            });
-                          }
-                          setShowMenuModal(false);
-                          setShowSettingsModal(true);
-                        }}
+                        onPress={() => showMethodInfo(item)}
                       >
                         <Ionicons
-                          name="settings-outline"
+                          name="information-circle-outline"
                           size={22}
                           color="#666"
                         />
                       </TouchableOpacity>
-                    )}
+
+                      {/* 기존 커스터마이징 설정 버튼 */}
+                      {item.isCustomizable && (
+                        <TouchableOpacity
+                          style={styles.iconButton}
+                          onPress={() => {
+                            // 먼저 메서드 선택
+                            if (item.isExamMode) {
+                              const methodWithQuestions = {
+                                ...item,
+                                remainingQuestions: item.questionCount || 100,
+                                workDuration: item.workDuration || 20,
+                              };
+                              setSelectedMethod(methodWithQuestions);
+                              setCustomSettings({
+                                questionCount: item.questionCount || 100,
+                                timePerQuestion: item.workDuration || 20,
+                                workDuration: customSettings.workDuration,
+                                breakDuration: customSettings.breakDuration,
+                              });
+                            } else {
+                              setSelectedMethod(item);
+                              setCustomSettings({
+                                workDuration: item.workDuration || 45 * 60,
+                                breakDuration: item.breakDuration || 15 * 60,
+                                questionCount: customSettings.questionCount,
+                                timePerQuestion: customSettings.timePerQuestion,
+                              });
+                            }
+                            setShowMenuModal(false);
+                            setShowSettingsModal(true);
+                          }}
+                        >
+                          <Ionicons
+                            name="settings-outline"
+                            size={22}
+                            color="#666"
+                          />
+                        </TouchableOpacity>
+                      )}
+                    </View>
                   </View>
                 </TouchableOpacity>
               )}
@@ -651,6 +673,50 @@ const StudyTimerScreen = () => {
             >
               <Text style={styles.closeButtonText}>닫기</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 공부법 정보 모달 추가 */}
+      <Modal visible={showInfoModal} animationType="slide" transparent={true}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.infoModalContent}>
+            <View style={styles.infoModalHeader}>
+              <Text style={[styles.infoModalTitle, { color: selectedMethodInfo?.color }]}>
+                {selectedMethodInfo?.name}
+              </Text>
+              <TouchableOpacity
+                style={styles.infoModalCloseButton}
+                onPress={() => setShowInfoModal(false)}
+              >
+                <Ionicons name="close" size={24} color="#666" />
+              </TouchableOpacity>
+            </View>
+            
+            <View style={styles.infoModalScrollContent}>
+              <Text style={styles.infoModalText}>
+                {selectedMethodInfo?.detailedInfo || "설명이 없습니다."}
+              </Text>
+            </View>
+            
+            <View style={styles.infoModalFooter}>
+              <TouchableOpacity
+                style={[
+                  styles.infoModalSelectButton,
+                  { backgroundColor: selectedMethodInfo?.color || "#50cebb" }
+                ]}
+                onPress={() => {
+                  if (selectedMethodInfo) {
+                    handleMethodSelect(selectedMethodInfo);
+                    setShowInfoModal(false);
+                  }
+                }}
+              >
+                <Text style={styles.infoModalSelectButtonText}>
+                  이 방법 선택하기
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>

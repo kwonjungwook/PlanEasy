@@ -23,7 +23,7 @@ const KakaoLoginWebView = ({ visible, onClose, onLoginSuccess }) => {
       script.src = "https://developers.kakao.com/sdk/js/kakao.min.js";
       script.onload = () => {
         // SDK 초기화
-        Kakao.init('b0c6503f9985f98ade15374ac2f4f580'); // JavaScript 키
+        Kakao.init('f6e0c48ea0ec5bf79602db7c14ae07bc'); // JavaScript 키
         
         // 로그인 시도
         if (!Kakao.isInitialized()) {
@@ -107,7 +107,7 @@ const KakaoLoginWebView = ({ visible, onClose, onLoginSuccess }) => {
         <WebView
           ref={webViewRef}
           source={{
-            uri: "https://accounts.kakao.com/login?continue=https://kauth.kakao.com/oauth/authorize?client_id=b0c6503f9985f98ade15374ac2f4f580&redirect_uri=http://localhost:19006&response_type=code",
+            uri: "https://accounts.kakao.com/login?continue=https://kauth.kakao.com/oauth/authorize?client_id=f6e0c48ea0ec5bf79602db7c14ae07bc&redirect_uri=http://localhost:19006&response_type=code",
           }}
           injectedJavaScript={INJECTED_JAVASCRIPT}
           onMessage={handleMessage}
