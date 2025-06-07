@@ -1,32 +1,31 @@
 // src/screens/ScheduleScreen.js
 // 중앙 일정관리 메인화면 - 개선된 디자인 및 일관성 있는 내부 화면
 
-import React, { useState, useCallback, useEffect } from "react";
+import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import { LinearGradient } from "expo-linear-gradient";
+import React, { useCallback, useEffect, useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Platform,
+  Alert,
   BackHandler,
-  ScrollView,
   Dimensions,
   KeyboardAvoidingView,
-  Alert,
+  Platform,
   StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
-import { useFocusEffect, useNavigation } from "@react-navigation/native";
-import { Ionicons } from "@expo/vector-icons";
-import WeekendSchedule from "../components/WeekendSchedule";
-import DaySchedule from "../components/DaySchedule";
+import { ToastEventSystem } from "../components/common/AutoToast";
 import ConsumerCustom from "../components/ConsumerCustom";
+import DaySchedule from "../components/DaySchedule";
 import Guide from "../components/Guide";
+import WeekendSchedule from "../components/WeekendSchedule";
 import { useProgress } from "../context/ProgressContext";
 import { useSubscription } from "../context/SubscriptionContext";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { ToastEventSystem } from "../components/common/AutoToast";
-import { LinearGradient } from "expo-linear-gradient";
-import { COLORS, SPACING } from "../styles/commonStyles"; // 공통 스타일 임포트
+import { COLORS } from "../styles/commonStyles"; // 공통 스타일 임포트
 
 // 화면 높이를 가져옵니다.
 const windowHeight = Dimensions.get("window").height;
@@ -257,47 +256,24 @@ export default function ScheduleScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[
-              styles.modeCard,
-              !unlockedModes["daily-custom"] &&
-                !isSubscribed &&
-                styles.lockedCard,
-            ]}
+            style={[styles.modeCard]}
             onPress={() => handleModeSelect("daily-custom")}
           >
             <View style={styles.modeIconContainer}>
-              <Text style={styles.modeIcon}>🗓️</Text>
+              <Text style={styles.modeIcon}>⚡</Text>
             </View>
-            <Text style={styles.modeTitle}>요일별 커스텀</Text>
+            <Text style={styles.modeTitle}>일반 커스텀</Text>
             <Text style={styles.modeDescription}>
-              월~일요일까지{"\n"}각각 다른 일정을 설정합니다
+              개인 선호에 맞춘{"\n"}일정을 만듭니다
             </Text>
-            {!unlockedModes["daily-custom"] && !isSubscribed ? (
-              <View style={styles.priceBadge}>
-                <Ionicons name="lock-closed" size={12} color="#fff" />
-                <Text style={styles.priceText}>
-                  {MODE_PRICES["daily-custom"]}P
-                </Text>
-              </View>
-            ) : (
-              <View style={styles.unlockedBadge}>
-                <Ionicons
-                  name="checkmark-circle"
-                  size={12}
-                  color={COLORS.primary}
-                />
-                <Text style={styles.unlockedText}>해제됨</Text>
-              </View>
-            )}
+            <View style={styles.freeBadge}>
+              <Ionicons name="heart" size={12} color="#FF6B6B" />
+              <Text style={styles.freeText}>무료</Text>
+            </View>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[
-              styles.modeCard,
-              !unlockedModes["consumer-custom"] &&
-                !isSubscribed &&
-                styles.lockedCard,
-            ]}
+            style={[styles.modeCard]}
             onPress={() => handleModeSelect("consumer-custom")}
           >
             <View style={styles.modeIconContainer}>
@@ -307,39 +283,24 @@ export default function ScheduleScreen() {
             <Text style={styles.modeDescription}>
               개인 설정에 맞게{"\n"}일정을 세부 조정합니다
             </Text>
-            {!unlockedModes["consumer-custom"] && !isSubscribed ? (
-              <View style={styles.priceBadge}>
-                <Ionicons name="lock-closed" size={12} color="#fff" />
-                <Text style={styles.priceText}>
-                  {MODE_PRICES["consumer-custom"]}P
-                </Text>
-              </View>
-            ) : (
-              <View style={styles.unlockedBadge}>
-                <Ionicons
-                  name="checkmark-circle"
-                  size={12}
-                  color={COLORS.primary}
-                />
-                <Text style={styles.unlockedText}>해제됨</Text>
-              </View>
-            )}
+            <View style={styles.freeBadge}>
+              <Ionicons name="heart" size={12} color="#FF6B6B" />
+              <Text style={styles.freeText}>무료</Text>
+            </View>
           </TouchableOpacity>
         </View>
 
-        {/* 구독 안내 컴팩트 카드 */}
-        {!isSubscribed && (
-          <TouchableOpacity
-            style={styles.subscriptionCompactCard}
-            onPress={navigateToSubscription}
-          >
-            <Ionicons name="star" size={20} color="#FFD700" />
-            <Text style={styles.subscriptionCompactText}>
-              프리미엄으로 모든 기능 해제하기
-            </Text>
-            <Ionicons name="chevron-forward" size={16} color="#ADB5BD" />
-          </TouchableOpacity>
-        )}
+        {/* 모든 모드가 무료로 제공됨을 안내하는 컴팩트 카드 */}
+        <TouchableOpacity
+          style={styles.freeAnnouncementCard}
+          onPress={navigateToSubscription}
+        >
+          <Ionicons name="heart" size={20} color="#FF6B6B" />
+          <Text style={styles.freeAnnouncementText}>
+            🎉 모든 기능이 무료입니다! 자유롭게 이용하세요
+          </Text>
+          <Ionicons name="chevron-forward" size={16} color="#ADB5BD" />
+        </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.guideCard}
@@ -501,62 +462,30 @@ const styles = StyleSheet.create({
     }),
     position: "relative",
   },
-  // 잠긴 카드 스타일
-  lockedCard: {
-    opacity: 0.75,
-  },
-  // 무료 배지 스타일
-  freeBadge: {
-    position: "absolute",
-    top: 20,
-    right: 20,
-    backgroundColor: "#E8F5E9",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  freeText: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#2E7D32",
-  },
-  // 가격 배지 스타일
-  priceBadge: {
-    position: "absolute",
-    top: 20,
-    right: 20,
-    backgroundColor: COLORS.primary,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-    flexDirection: "row",
+  modeIconContainer: {
+    width: 48, // 더 작게
+    height: 48, // 더 작게
+    borderRadius: 24,
+    backgroundColor: "#F0FFF8",
+    justifyContent: "center",
     alignItems: "center",
-  },
-  priceText: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#fff",
-    marginLeft: 5,
-  },
-  // 해제됨 배지 스타일
-  unlockedBadge: {
-    position: "absolute",
-    top: 20,
-    right: 20,
-    backgroundColor: "#f0f9f8",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-    flexDirection: "row",
-    alignItems: "center",
+    marginBottom: 12,
     borderWidth: 1,
-    borderColor: "#e0f2f1",
+    borderColor: "#E0F7EF",
   },
-  unlockedText: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: COLORS.primary,
-    marginLeft: 5,
+  modeIcon: {
+    fontSize: 28,
+  },
+  modeTitle: {
+    fontSize: 18, // 폰트 크기 감소
+    fontWeight: "800",
+    color: "#333333",
+    marginBottom: 6, // 마진 감소
+  },
+  modeDescription: {
+    fontSize: 14, // 폰트 크기 감소
+    color: "#666666",
+    lineHeight: 20, // 줄 높이 감소
   },
   guideCard: {
     backgroundColor: "#EEF2FF",
@@ -582,17 +511,6 @@ const styles = StyleSheet.create({
   guideTextContainer: {
     flex: 1,
   },
-  modeIconContainer: {
-    width: 48, // 더 작게
-    height: 48, // 더 작게
-    borderRadius: 24,
-    backgroundColor: "#F0FFF8",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: "#E0F7EF",
-  },
   guideIconContainer: {
     width: 56,
     height: 56,
@@ -604,28 +522,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#D8E2FE",
   },
-  modeIcon: {
-    fontSize: 28,
-  },
   guideIcon: {
     fontSize: 28,
-  },
-  modeTitle: {
-    fontSize: 18, // 폰트 크기 감소
-    fontWeight: "800",
-    color: "#333333",
-    marginBottom: 6, // 마진 감소
   },
   guideTitle: {
     fontSize: 18,
     fontWeight: "800",
     color: "#333333",
     marginBottom: 6,
-  },
-  modeDescription: {
-    fontSize: 14, // 폰트 크기 감소
-    color: "#666666",
-    lineHeight: 20, // 줄 높이 감소
   },
   guideDescription: {
     fontSize: 14,
@@ -690,5 +594,43 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     fontWeight: "600",
     marginLeft: 6,
+  },
+  // 무료 안내 카드 스타일
+  freeAnnouncementCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFF8E1",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: "#FFE0B2",
+  },
+  freeAnnouncementText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#333",
+    marginLeft: 12,
+    marginRight: 8,
+  },
+  // 무료 배지 스타일
+  freeBadge: {
+    position: "absolute",
+    top: 12,
+    right: 12,
+    backgroundColor: "#FF6B6B",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  freeText: {
+    color: "#fff",
+    fontSize: 10,
+    fontWeight: "bold",
+    marginLeft: 4,
   },
 });

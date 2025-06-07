@@ -11,6 +11,7 @@ import {
   FlatList,
   Modal,
   SafeAreaView,
+  ScrollView,
   StatusBar,
   Text,
   TouchableOpacity,
@@ -610,19 +611,7 @@ const StudyTimerScreen = () => {
                     </View>
 
                     <View style={styles.menuItemControls}>
-                      {/* 정보 보기 버튼 추가 */}
-                      <TouchableOpacity
-                        style={styles.iconButton}
-                        onPress={() => showMethodInfo(item)}
-                      >
-                        <Ionicons
-                          name="information-circle-outline"
-                          size={22}
-                          color="#666"
-                        />
-                      </TouchableOpacity>
-
-                      {/* 기존 커스터마이징 설정 버튼 */}
+                      {/* 기존 커스터마이징 설정 버튼 먼저 */}
                       {item.isCustomizable && (
                         <TouchableOpacity
                           style={styles.iconButton}
@@ -661,6 +650,18 @@ const StudyTimerScreen = () => {
                           />
                         </TouchableOpacity>
                       )}
+
+                      {/* 정보 보기 버튼 나중에 */}
+                      <TouchableOpacity
+                        style={styles.iconButton}
+                        onPress={() => showMethodInfo(item)}
+                      >
+                        <Ionicons
+                          name="information-circle-outline"
+                          size={22}
+                          color="#666"
+                        />
+                      </TouchableOpacity>
                     </View>
                   </View>
                 </TouchableOpacity>
@@ -682,7 +683,12 @@ const StudyTimerScreen = () => {
         <View style={styles.modalOverlay}>
           <View style={styles.infoModalContent}>
             <View style={styles.infoModalHeader}>
-              <Text style={[styles.infoModalTitle, { color: selectedMethodInfo?.color }]}>
+              <Text
+                style={[
+                  styles.infoModalTitle,
+                  { color: selectedMethodInfo?.color },
+                ]}
+              >
                 {selectedMethodInfo?.name}
               </Text>
               <TouchableOpacity
@@ -692,18 +698,22 @@ const StudyTimerScreen = () => {
                 <Ionicons name="close" size={24} color="#666" />
               </TouchableOpacity>
             </View>
-            
-            <View style={styles.infoModalScrollContent}>
+
+            <ScrollView
+              style={styles.infoModalScrollContent}
+              contentContainerStyle={{ paddingBottom: 8 }}
+              showsVerticalScrollIndicator={true}
+            >
               <Text style={styles.infoModalText}>
                 {selectedMethodInfo?.detailedInfo || "설명이 없습니다."}
               </Text>
-            </View>
-            
+            </ScrollView>
+
             <View style={styles.infoModalFooter}>
               <TouchableOpacity
                 style={[
                   styles.infoModalSelectButton,
-                  { backgroundColor: selectedMethodInfo?.color || "#50cebb" }
+                  { backgroundColor: selectedMethodInfo?.color || "#50cebb" },
                 ]}
                 onPress={() => {
                   if (selectedMethodInfo) {

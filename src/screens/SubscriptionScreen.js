@@ -1,258 +1,81 @@
 // src/screens/SubscriptionScreen.js
-import React, { useState } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  Alert,
-  ActivityIndicator,
-} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import React from "react";
+import {
+  ActivityIndicator,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { useAuth } from "../context/AuthContext";
 import { useSubscription } from "../context/SubscriptionContext";
 
 const SubscriptionScreen = ({ navigation }) => {
   const { userData, isLoggedIn } = useAuth();
-  const { isSubscribed, subscriptionData, loading, subscribe, unsubscribe } =
-    useSubscription();
-  const [selectedPlan, setSelectedPlan] = useState("monthly");
-  const [processingPayment, setProcessingPayment] = useState(false);
+  const { isSubscribed, subscriptionData, loading } = useSubscription();
 
-  // Subscription plans data
-  const plans = [
+  // 무료 제공 기능 리스트
+  const freeFeatures = [
     {
-      id: "monthly",
-      title: "월간 구독",
-      price: "4,900원/월",
-      features: [
-        "무제한 일정 생성",
-        "AI 학습 피드백",
-        "고급 통계 보고서",
-        "모든 앱 기능 이용",
-      ],
-      savings: "",
-      mostPopular: false,
+      icon: "infinite",
+      title: "무제한 일정 생성",
+      description: "일정 제한 없이 모든 계획을 관리하세요",
     },
     {
-      id: "yearly",
-      title: "연간 구독",
-      price: "49,000원/년",
-      features: [
-        "무제한 일정 생성",
-        "AI 학습 피드백",
-        "고급 통계 보고서",
-        "모든 앱 기능 이용",
-        "2개월 무료 (16% 할인)",
-      ],
-      savings: "16% 할인",
-      mostPopular: true,
+      icon: "analytics",
+      title: "AI 학습 분석",
+      description: "AI가 학습 패턴을 분석하고 맞춤형 피드백을 제공합니다",
+    },
+    {
+      icon: "sync",
+      title: "클라우드 동기화",
+      description: "모든 기기에서 일정과 진행 상황을 확인하세요",
+    },
+    {
+      icon: "trophy",
+      title: "특별 배지 및 테마",
+      description: "독점 배지와 테마로 앱을 커스터마이징하세요",
+    },
+    {
+      icon: "star",
+      title: "프리미엄 기능",
+      description: "모든 고급 기능을 무료로 이용하세요",
     },
   ];
 
-  // Handle subscription purchase
-  const handleSubscribe = async () => {
-    if (!isLoggedIn) {
-      Alert.alert("로그인 필요", "구독을 시작하려면 먼저 로그인해주세요.", [
-        { text: "취소", style: "cancel" },
-        {
-          text: "로그인하기",
-          onPress: () =>
-            navigation.navigate("Login", { returnToScreen: "Subscription" }),
-        },
-      ]);
-      return;
-    }
-
-    // Here you would typically handle the actual payment process
-    setProcessingPayment(true);
-
-    // Mock payment process
-    setTimeout(async () => {
-      try {
-        const success = await subscribe(selectedPlan, "creditCard");
-
-        if (success) {
-          Alert.alert(
-            "구독 완료",
-            `플랜이지 플러스 ${
-              selectedPlan === "monthly" ? "월간" : "연간"
-            } 구독이 시작되었습니다!`,
-            [{ text: "확인", onPress: () => navigation.navigate("MyPage") }]
-          );
-        } else {
-          Alert.alert(
-            "오류",
-            "구독 처리 중 문제가 발생했습니다. 다시 시도해주세요."
-          );
-        }
-      } catch (error) {
-        console.error("Subscription error:", error);
-        Alert.alert(
-          "오류",
-          "구독 처리 중 문제가 발생했습니다. 다시 시도해주세요."
-        );
-      } finally {
-        setProcessingPayment(false);
-      }
-    }, 2000); // Simulate payment processing delay
-  };
-
-  // Handle unsubscribe
-  const handleUnsubscribe = () => {
-    Alert.alert(
-      "구독 취소",
-      "정말 플랜이지 플러스 구독을 취소하시겠습니까? 현재 구독 기간이 끝날 때까지 서비스를 이용하실 수 있습니다.",
-      [
-        { text: "아니오", style: "cancel" },
-        {
-          text: "구독 취소",
-          style: "destructive",
-          onPress: async () => {
-            setProcessingPayment(true);
-            try {
-              const success = await unsubscribe();
-
-              if (success) {
-                Alert.alert(
-                  "구독 취소 완료",
-                  "구독이 취소되었습니다. 구독 기간이 끝날 때까지 서비스를 이용하실 수 있습니다.",
-                  [
-                    {
-                      text: "확인",
-                      onPress: () => navigation.navigate("MyPage"),
-                    },
-                  ]
-                );
-              } else {
-                Alert.alert(
-                  "오류",
-                  "구독 취소 중 문제가 발생했습니다. 다시 시도해주세요."
-                );
-              }
-            } catch (error) {
-              console.error("Unsubscribe error:", error);
-              Alert.alert(
-                "오류",
-                "구독 취소 중 문제가 발생했습니다. 다시 시도해주세요."
-              );
-            } finally {
-              setProcessingPayment(false);
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  // Subscription plan card component
-  const PlanCard = ({ plan }) => (
-    <TouchableOpacity
-      style={[
-        styles.planCard,
-        selectedPlan === plan.id && styles.selectedPlanCard,
-        plan.mostPopular && styles.popularPlanCard,
-      ]}
-      onPress={() => setSelectedPlan(plan.id)}
-      activeOpacity={0.8}
-    >
-      {plan.mostPopular && (
-        <View style={styles.popularBadge}>
-          <Text style={styles.popularBadgeText}>인기</Text>
-        </View>
-      )}
-
-      <Text style={styles.planTitle}>{plan.title}</Text>
-      <Text style={styles.planPrice}>{plan.price}</Text>
-
-      {plan.savings ? (
-        <Text style={styles.savingsText}>{plan.savings}</Text>
-      ) : (
-        <View style={styles.spacer} />
-      )}
-
-      <View style={styles.featuresContainer}>
-        {plan.features.map((feature, index) => (
-          <View key={index} style={styles.featureRow}>
-            <Ionicons name="checkmark-circle" size={18} color="#50cebb" />
-            <Text style={styles.featureText}>{feature}</Text>
-          </View>
-        ))}
+  // 무료 제공 안내 카드
+  const FreeServiceInfoCard = () => (
+    <View style={styles.freeServiceCard}>
+      <View style={styles.freeServiceHeader}>
+        <Ionicons name="heart" size={24} color="#FF6B6B" />
+        <Text style={styles.freeServiceHeaderText}>
+          🎉 모든 기능 무료 제공! 🎉
+        </Text>
       </View>
 
-      <View style={styles.radioContainer}>
-        <View
-          style={[
-            styles.radioOuter,
-            selectedPlan === plan.id && styles.radioOuterSelected,
-          ]}
-        >
-          {selectedPlan === plan.id && <View style={styles.radioInner} />}
-        </View>
-        <Text style={styles.radioText}>선택</Text>
+      <Text style={styles.freeServiceDescription}>
+        플랜이지의 모든 프리미엄 기능을 무료로 사용하실 수 있습니다!
+        {"\n"}더 이상 구독이 필요하지 않아요.
+      </Text>
+
+      <View style={styles.freeServiceDetail}>
+        <Text style={styles.freeServiceLabel}>상태:</Text>
+        <Text style={styles.freeServiceValue}>모든 기능 무료 이용 가능 ✨</Text>
       </View>
-    </TouchableOpacity>
+
+      <View style={styles.freeServiceDetail}>
+        <Text style={styles.freeServiceLabel}>기간:</Text>
+        <Text style={styles.freeServiceValue}>영구 무료</Text>
+      </View>
+
+      <View style={styles.freeServiceDetail}>
+        <Text style={styles.freeServiceLabel}>혜택:</Text>
+        <Text style={styles.freeServiceValue}>모든 프리미엄 기능 포함</Text>
+      </View>
+    </View>
   );
-
-  // Subscription info card for current subscribers
-  const SubscriptionInfoCard = () => {
-    if (!subscriptionData) return null;
-
-    const formatDate = (dateString) => {
-      try {
-        const date = new Date(dateString);
-        return `${date.getFullYear()}년 ${
-          date.getMonth() + 1
-        }월 ${date.getDate()}일`;
-      } catch (error) {
-        console.error("Date formatting error:", error);
-        return "날짜 정보 없음";
-      }
-    };
-
-    const planTypeText =
-      subscriptionData.planType === "monthly" ? "월간" : "연간";
-    const startDate = subscriptionData.startDate
-      ? formatDate(subscriptionData.startDate)
-      : "정보 없음";
-    const expiryDate = subscriptionData.expiryDate
-      ? formatDate(subscriptionData.expiryDate)
-      : "무기한";
-
-    return (
-      <View style={styles.subscriptionInfoCard}>
-        <View style={styles.subscriptionHeader}>
-          <Ionicons name="star" size={24} color="#FFD700" />
-          <Text style={styles.subscriptionHeaderText}>현재 구독 정보</Text>
-        </View>
-
-        <View style={styles.subscriptionDetail}>
-          <Text style={styles.subscriptionLabel}>구독 유형:</Text>
-          <Text style={styles.subscriptionValue}>
-            플랜이지 플러스 {planTypeText}
-          </Text>
-        </View>
-
-        <View style={styles.subscriptionDetail}>
-          <Text style={styles.subscriptionLabel}>시작일:</Text>
-          <Text style={styles.subscriptionValue}>{startDate}</Text>
-        </View>
-
-        <View style={styles.subscriptionDetail}>
-          <Text style={styles.subscriptionLabel}>다음 결제일:</Text>
-          <Text style={styles.subscriptionValue}>{expiryDate}</Text>
-        </View>
-
-        <TouchableOpacity
-          style={styles.cancelButton}
-          onPress={handleUnsubscribe}
-        >
-          <Text style={styles.cancelButtonText}>구독 취소</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  };
 
   return (
     <View style={styles.container}>
@@ -264,101 +87,65 @@ const SubscriptionScreen = ({ navigation }) => {
         <Ionicons name="chevron-back" size={24} color="#333" />
       </TouchableOpacity>
 
-      {loading || processingPayment ? (
+      {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#50cebb" />
-          <Text style={styles.loadingText}>
-            {processingPayment ? "결제 처리 중..." : "로딩 중..."}
-          </Text>
+          <Text style={styles.loadingText}>로딩 중...</Text>
         </View>
       ) : (
         <ScrollView style={styles.scrollContainer}>
           <View style={styles.header}>
             <View style={styles.logoContainer}>
-              <Text style={styles.logoText}>P</Text>
+              <Ionicons name="heart" size={40} color="#FF6B6B" />
             </View>
-            <Text style={styles.title}>플랜이지 플러스</Text>
-            <Text style={styles.subtitle}>더 많은 기능을 경험해보세요</Text>
+            <Text style={styles.title}>플랜이지 - 모든 기능 무료!</Text>
+            <Text style={styles.subtitle}>
+              모든 프리미엄 기능을 무료로 즐기세요
+            </Text>
           </View>
 
-          {isSubscribed ? (
-            // Show current subscription info for subscribed users
-            <SubscriptionInfoCard />
-          ) : (
-            // Show subscription plans for non-subscribers
-            <>
-              <View style={styles.plansContainer}>
-                {plans.map((plan) => (
-                  <PlanCard key={plan.id} plan={plan} />
-                ))}
-              </View>
+          {/* 무료 제공 안내 카드 */}
+          <FreeServiceInfoCard />
 
-              <View style={styles.benefitsContainer}>
-                <Text style={styles.benefitsTitle}>플랜이지 플러스 혜택</Text>
+          <View style={styles.benefitsContainer}>
+            <Text style={styles.benefitsTitle}>
+              무료로 이용 가능한 모든 기능
+            </Text>
 
-                <View style={styles.benefitRow}>
-                  <View style={styles.benefitIconContainer}>
-                    <Ionicons name="infinite" size={24} color="#50cebb" />
-                  </View>
-                  <View style={styles.benefitTextContainer}>
-                    <Text style={styles.benefitTitle}>무제한 일정 생성</Text>
-                    <Text style={styles.benefitDescription}>
-                      일정 제한 없이 모든 계획을 관리하세요
-                    </Text>
-                  </View>
+            {freeFeatures.map((feature, index) => (
+              <View key={index} style={styles.benefitRow}>
+                <View style={styles.benefitIconContainer}>
+                  <Ionicons name={feature.icon} size={24} color="#50cebb" />
                 </View>
-
-                <View style={styles.benefitRow}>
-                  <View style={styles.benefitIconContainer}>
-                    <Ionicons name="analytics" size={24} color="#50cebb" />
-                  </View>
-                  <View style={styles.benefitTextContainer}>
-                    <Text style={styles.benefitTitle}>AI 학습 분석</Text>
-                    <Text style={styles.benefitDescription}>
-                      AI가 학습 패턴을 분석하고 맞춤형 피드백을 제공합니다
-                    </Text>
-                  </View>
+                <View style={styles.benefitTextContainer}>
+                  <Text style={styles.benefitTitle}>{feature.title}</Text>
+                  <Text style={styles.benefitDescription}>
+                    {feature.description}
+                  </Text>
                 </View>
-
-                <View style={styles.benefitRow}>
-                  <View style={styles.benefitIconContainer}>
-                    <Ionicons name="sync" size={24} color="#50cebb" />
-                  </View>
-                  <View style={styles.benefitTextContainer}>
-                    <Text style={styles.benefitTitle}>클라우드 동기화</Text>
-                    <Text style={styles.benefitDescription}>
-                      모든 기기에서 일정과 진행 상황을 확인하세요
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.benefitRow}>
-                  <View style={styles.benefitIconContainer}>
-                    <Ionicons name="trophy" size={24} color="#50cebb" />
-                  </View>
-                  <View style={styles.benefitTextContainer}>
-                    <Text style={styles.benefitTitle}>특별 배지 및 테마</Text>
-                    <Text style={styles.benefitDescription}>
-                      독점 배지와 테마로 앱을 커스터마이징하세요
-                    </Text>
-                  </View>
+                <View style={styles.freeIconContainer}>
+                  <Ionicons name="checkmark-circle" size={20} color="#4CAF50" />
+                  <Text style={styles.freeText}>무료</Text>
                 </View>
               </View>
+            ))}
+          </View>
 
-              <TouchableOpacity
-                style={styles.subscribeButton}
-                onPress={handleSubscribe}
-              >
-                <Text style={styles.subscribeButtonText}>구독 시작하기</Text>
-              </TouchableOpacity>
+          <View style={styles.thankYouContainer}>
+            <Ionicons name="star" size={32} color="#FFD700" />
+            <Text style={styles.thankYouTitle}>감사합니다!</Text>
+            <Text style={styles.thankYouMessage}>
+              플랜이지를 이용해 주시는 모든 분들께 감사드리며,{"\n"}
+              앞으로도 더 나은 서비스로 보답하겠습니다.
+            </Text>
+          </View>
 
-              <Text style={styles.disclaimer}>
-                결제는 확인 시 진행되며, 구독은 자동으로 갱신됩니다. 언제든지
-                설정에서 구독을 취소할 수 있습니다. 이용약관 및
-                개인정보처리방침에 동의합니다.
-              </Text>
-            </>
-          )}
+          <TouchableOpacity
+            style={styles.continueButton}
+            onPress={() => navigation.navigate("MyPage")}
+          >
+            <Text style={styles.continueButtonText}>마이페이지로 돌아가기</Text>
+          </TouchableOpacity>
         </ScrollView>
       )}
     </View>
@@ -619,6 +406,83 @@ const styles = StyleSheet.create({
     color: "#e74c3c",
     fontSize: 16,
     fontWeight: "500",
+  },
+  freeServiceCard: {
+    backgroundColor: "#f9f9f9",
+    borderRadius: 12,
+    padding: 20,
+    marginBottom: 30,
+    borderWidth: 2,
+    borderColor: "#50cebb",
+  },
+  freeServiceHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  freeServiceHeaderText: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#333",
+    marginLeft: 10,
+  },
+  freeServiceDescription: {
+    fontSize: 14,
+    color: "#666",
+    lineHeight: 20,
+  },
+  freeServiceDetail: {
+    flexDirection: "row",
+    marginBottom: 15,
+  },
+  freeServiceLabel: {
+    width: 100,
+    fontSize: 16,
+    color: "#666",
+  },
+  freeServiceValue: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: "500",
+    color: "#333",
+  },
+  freeIconContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginLeft: 15,
+  },
+  freeText: {
+    fontSize: 14,
+    color: "#50cebb",
+    fontWeight: "bold",
+    marginLeft: 5,
+  },
+  thankYouContainer: {
+    alignItems: "center",
+    marginBottom: 30,
+  },
+  thankYouTitle: {
+    fontSize: 24,
+    fontWeight: "bold",
+    color: "#333",
+    marginBottom: 10,
+  },
+  thankYouMessage: {
+    fontSize: 16,
+    color: "#666",
+    textAlign: "center",
+    lineHeight: 20,
+  },
+  continueButton: {
+    backgroundColor: "#50cebb",
+    borderRadius: 12,
+    padding: 16,
+    alignItems: "center",
+  },
+  continueButtonText: {
+    color: "white",
+    fontSize: 18,
+    fontWeight: "bold",
   },
 });
 

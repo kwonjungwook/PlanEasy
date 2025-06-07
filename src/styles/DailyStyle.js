@@ -1,23 +1,20 @@
 // src/styles/DailyStyle.js
-import { StyleSheet, Platform } from "react-native";
+import { Platform, StyleSheet } from "react-native";
 
 const styles = StyleSheet.create({
   // 컨테이너 스타일
   container: {
     flex: 1,
     backgroundColor: "#F8F9FA",
-    height: "100%",
   },
 
   // 스크롤 컨테이너 스타일
   scrollContainer: {
     flex: 1,
-    height: "100%",
     paddingBottom: 5,
   },
   scrollView: {
     flex: 1,
-    height: "100%",
   },
   scrollContent: {
     padding: 20,
@@ -515,14 +512,13 @@ const styles = StyleSheet.create({
     bottom: 80,
     left: 20,
     right: 20,
-    zIndex: 9999,
+    zIndex: 1000,
   },
   toast: {
-    position: "relative",
     borderRadius: 12,
     marginBottom: 8,
-    height: 40, // 높이 명시적 지정
-    overflow: "hidden", // 내용이 넘치지 않도록 설정
+    minHeight: 40,
+    overflow: "hidden",
     ...Platform.select({
       ios: {
         shadowColor: "#000",
@@ -536,24 +532,13 @@ const styles = StyleSheet.create({
     }),
   },
   toastOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
     borderRadius: 12,
-    zIndex: 1,
   },
   toastContent: {
-    position: "absolute", // 절대 위치로 변경
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 12,
-    zIndex: 2,
+    paddingVertical: 8,
   },
   toastText: {
     fontSize: 14,
@@ -596,17 +581,7 @@ const styles = StyleSheet.create({
     bottom: 80,
     left: 20,
     right: 20,
-    zIndex: 9999,
-  },
-
-  slotInfoText: {
-    fontSize: 12,
-    color: "#FF9500",
-    fontWeight: "normal",
-  },
-  addGoalButtonTextSpecial: {
-    color: "#FF9500", // 주황색으로 가격 강조
-    fontWeight: "bold",
+    zIndex: 1000,
   },
 
   subscribedBadge: {

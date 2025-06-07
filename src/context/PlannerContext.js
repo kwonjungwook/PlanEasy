@@ -1,22 +1,19 @@
 // src/context/PlannerContext.js - 최적화 버전
-import React, {
-  createContext,
-  useContext,
-  useState,
-  useEffect,
-  useCallback,
-} from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { format } from "date-fns";
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
 import { Alert } from "react-native";
-import * as Notifications from "expo-notifications";
 import { eventBus } from "../utils/eventBus";
 
 // 순환 참조 대신 직접 import
 import {
   generateFeedback,
-  initFeedbackService,
-  updateReportScheduling,
   setReportCallback, // 새 함수 import
 } from "../services/ImprovedFeedbackService";
 
@@ -197,21 +194,11 @@ export function PlannerProvider({ children }) {
   const [notifications, setNotifications] = useState({});
 
   useEffect(() => {
-    // 피드백 서비스 초기화
-    initFeedbackService({ isPremiumUser });
-
-    // 리포트 콜백 등록 - 무한 재귀 방지
-    // 주의: 이 콜백은 더 이상 사용되지 않으므로, 빈 함수로 대체
+    // 리포트 콜백 등록 - 알림 기능 제거로 단순화
     setReportCallback(() => {
-      // 데이터 반환 대신 null 반환
+      // 데이터 반환 대신 null 반환 (무료 버전에서는 자동 알림 없음)
       return null;
     });
-
-    // 프리미엄 사용자 자동 리포트 스케줄링 설정
-    if (isPremiumUser) {
-      updateReportScheduling(true);
-      console.log("프리미엄 사용자 자동 리포트 설정 완료");
-    }
   }, [
     isPremiumUser,
     schedules,
@@ -1109,53 +1096,9 @@ export function PlannerProvider({ children }) {
     }
   };
 
-  // 취침 전 리포트 알림 설정 함수
-  const scheduleReportReminder = async (
-    bedtimeHour = 23,
-    bedtimeMinute = 0
-  ) => {
-    try {
-      // 기존 리포트 알림 취소
-      await Notifications.cancelScheduledNotificationAsync(
-        "daily-report-reminder"
-      );
+  // 알림 설정 함수 제거됨 - 무료 버전에서는 자동 알림 없음
 
-      // 오늘 날짜의 취침 시간 설정
-      const now = new Date();
-      const scheduleTime = new Date(now);
-      scheduleTime.setHours(bedtimeHour - 1); // 취침 1시간 전
-      scheduleTime.setMinutes(bedtimeMinute);
-      scheduleTime.setSeconds(0);
-
-      // 이미 지난 시간이면 다음 날로 설정
-      if (scheduleTime < now) {
-        scheduleTime.setDate(scheduleTime.getDate() + 1);
-      }
-
-      // 알림 스케줄링
-      await Notifications.scheduleNotificationAsync({
-        identifier: "daily-report-reminder",
-        content: {
-          title: "오늘의 학습 리포트",
-          body: "오늘 하루는 어땠나요? AI 리포트를 통해 오늘의 성과를 확인해보세요.",
-          data: { screen: "AI" },
-        },
-        trigger: {
-          hour: scheduleTime.getHours(),
-          minute: scheduleTime.getMinutes(),
-          repeats: true,
-        },
-      });
-
-      console.log("일일 리포트 알림이 설정되었습니다:", scheduleTime);
-      return true;
-    } catch (error) {
-      console.error("리포트 알림 설정 오류:", error);
-      return false;
-    }
-  };
-
-  // 프리미엄 상태 설정 함수
+  // 프리미엄 상태 설정 함수 (알림 기능 제거)
   const setPremiumStatus = async (isPremium) => {
     try {
       // 상태 업데이트
@@ -1166,9 +1109,6 @@ export function PlannerProvider({ children }) {
         STORAGE_KEYS.PREMIUM_USER,
         JSON.stringify(isPremium)
       );
-
-      // 프리미엄 상태에 따라 자동 리포트 스케줄링 업데이트
-      await updateReportScheduling(isPremium);
 
       console.log(
         `프리미엄 상태 변경됨: ${isPremium ? "프리미엄" : "무료"} 사용자`
@@ -1237,7 +1177,6 @@ export function PlannerProvider({ children }) {
         // AI 관련
         aiReports,
         generateAIFeedback,
-        scheduleReportReminder,
 
         // 통계 데이터 관련
         weeklyStats,

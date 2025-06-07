@@ -1,36 +1,35 @@
 // src/screens/WeeklyTimetableScreen.js
 
+import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { addDays, format, getDate, startOfWeek } from "date-fns";
+import { ko } from "date-fns/locale";
 import React, {
-  useState,
-  useEffect,
-  useRef,
   useCallback,
+  useEffect,
   useMemo,
+  useRef,
+  useState,
 } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Dimensions,
-  Modal,
   Alert,
   Animated,
+  Dimensions,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
-import { usePlanner } from "../context/PlannerContext";
-import MainLayout from "../components/layout/MainLayout";
-import { Ionicons } from "@expo/vector-icons";
-import { format, startOfWeek, addDays, getDate } from "date-fns";
-import { ko } from "date-fns/locale";
-import { useProgress } from "../context/ProgressContext";
 import {
+  GestureHandlerRootView,
   PinchGestureHandler,
   State,
-  GestureHandlerRootView,
 } from "react-native-gesture-handler";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import HeaderBar from "../components/layout/HeaderBar";
+import MainLayout from "../components/layout/MainLayout";
+import { usePlanner } from "../context/PlannerContext";
+import { useProgress } from "../context/ProgressContext";
 import { useSubscription } from "../context/SubscriptionContext";
 
 // 상수 정의
@@ -499,19 +498,21 @@ const WeeklyTimetableScreen = ({ navigation }) => {
     }
   };
 
-  // 색상이 해금되었는지 확인하는 함수 개선
-  const isColorUnlocked = useCallback(
-    (colorIndex) => {
-      const colorInfo = unlockedColors[colorIndex];
+  // 색상 해제 여부 확인 함수
+  const isColorUnlocked = useCallback((colorIndex) => {
+    // 모든 색상이 무료로 제공됨
+    return true;
+  }, []);
 
-      // 색상 정보가 없으면 해금되지 않음
-      if (!colorInfo) return false;
-
-      // 구매했거나 구독 혜택으로 사용 가능하면 해금됨
-      return colorInfo.purchased || colorInfo.subscriptionBenefit || false;
-    },
-    [unlockedColors]
-  );
+  // 색상 구매 함수
+  const handleColorPurchase = useCallback(async (colorIndex) => {
+    // 모든 색상이 무료로 제공되므로 구매 불필요
+    Alert.alert(
+      "알림",
+      "🎉 모든 색상이 무료로 제공됩니다! 자유롭게 사용하세요."
+    );
+    return;
+  }, []);
 
   // 색상 구매 함수 개선
   const purchaseColor = async (colorIndex) => {

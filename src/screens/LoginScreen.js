@@ -17,6 +17,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import NaverLoginService from "../services/NaverLoginService";
+import KakaoLoginWebView from "../components/KakaoLoginWebView";
 
 // 사용자 데이터 스토리지 키 상수
 const USER_AUTH_KEY = "@user_auth_data";
@@ -68,6 +69,8 @@ const LoginScreen = ({ route, navigation }) => {
   const focusListenerRef = useRef(null);
   // 로딩 타임아웃 처리를 위한 변수
   const [loadingTimeout, setLoadingTimeout] = useState(null);
+  // 카카오 WebView 상태 추가
+  const [showKakaoWebView, setShowKakaoWebView] = useState(false);
 
   // 로그인 성공 시 네비게이션 처리 부분을 찾아서 이렇게 수정하세요
   useEffect(() => {
@@ -408,36 +411,22 @@ const LoginScreen = ({ route, navigation }) => {
     }
   };
 
-  // 카카오 로그인 처리
+  // 카카오 로그인 처리 (WebView 방식으로 변경)
   const handleKakaoSignIn = async () => {
     try {
       setLoginStatus("카카오 로그인 준비 중...");
       setLocalLoading(true);
-      setNavigationAttempted(false); // 새 로그인 시도에 대비해 재설정
+      setNavigationAttempted(false);
 
       // UI 피드백 지연
       await new Promise((resolve) => setTimeout(resolve, 300));
 
       setLoginStatus("카카오 로그인 진행 중...");
-      console.log("Attempting Kakao login...");
+      console.log("WebView 방식 카카오 로그인 시작...");
 
-      const success = await loginWithKakao();
-      console.log(`Kakao login result: ${success ? "Success" : "Failed"}`);
-
-      if (success === null) {
-        // 사용자 취소
-        setLoginStatus("로그인이 취소되었습니다.");
-        setLocalLoading(false);
-        return;
-      }
-
-      if (success) {
-        setLoginStatus("카카오 로그인 성공! 이동합니다...");
-        // 네비게이션은 useEffect에서 처리됨
-      } else {
-        setLoginStatus("카카오 로그인에 실패했습니다. 다시 시도해주세요.");
-        setLocalLoading(false);
-      }
+      // WebView 모달 열기
+      setShowKakaoWebView(true);
+      setLocalLoading(false); // WebView가 열리면 로딩 비활성화
     } catch (error) {
       console.error("Kakao login error:", error);
       setLoginStatus("카카오 로그인 오류가 발생했습니다.");
@@ -446,6 +435,33 @@ const LoginScreen = ({ route, navigation }) => {
         "카카오 로그인 중 문제가 발생했습니다. 다시 시도해주세요."
       );
       setLocalLoading(false);
+    }
+  };
+
+  // 카카오 WebView 로그인 성공 콜백
+  const handleKakaoLoginSuccess = async (userData) => {
+    try {
+      console.log("카카오 WebView 로그인 성공:", userData);
+      
+      // AsyncStorage에 사용자 데이터 저장
+      await AsyncStorage.setItem(USER_AUTH_KEY, JSON.stringify(userData));
+      console.log("카카오 사용자 데이터 AsyncStorage에 저장 완료");
+      
+      // AuthContext에 사용자 데이터 설정
+      if (typeof setUser === "function") {
+        console.log("AuthContext에 사용자 데이터 설정 중");
+        setUser(userData);
+        console.log("AuthContext 사용자 데이터 설정 완료");
+      } else {
+        console.error("setUser 함수를 찾을 수 없음");
+      }
+      
+      setLoginStatus("카카오 로그인 성공! 이동합니다...");
+      setShowKakaoWebView(false);
+    } catch (error) {
+      console.error("카카오 로그인 성공 처리 오류:", error);
+      setLoginStatus("로그인 처리 중 오류가 발생했습니다.");
+      setShowKakaoWebView(false);
     }
   };
 
@@ -561,6 +577,16 @@ const LoginScreen = ({ route, navigation }) => {
           </View>
         </View>
       </Modal>
+
+      {/* 카카오 WebView 모달 추가 */}
+      <KakaoLoginWebView
+        visible={showKakaoWebView}
+        onClose={() => {
+          setShowKakaoWebView(false);
+          setLoginStatus("");
+        }}
+        onLoginSuccess={handleKakaoLoginSuccess}
+      />
     </KeyboardAvoidingView>
   );
 };

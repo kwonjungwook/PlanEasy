@@ -17,7 +17,9 @@
     "newArchEnabled": false,
     "android": {
       "googleServicesFile": "./google-services.json",
-      "permissions": ["SCHEDULE_EXACT_ALARM"],
+      "permissions": [
+        "SCHEDULE_EXACT_ALARM"
+      ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -31,7 +33,10 @@
               "scheme": "com.kwonjihoo.PlanEasy"
             }
           ],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         },
         {
           "action": "VIEW",
@@ -41,7 +46,10 @@
               "host": "oauth"
             }
           ],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         },
         {
           "action": "VIEW",
@@ -51,7 +59,10 @@
               "host": "oauth"
             }
           ],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         },
         {
           "action": "VIEW",
@@ -61,7 +72,10 @@
               "host": "oauth"
             }
           ],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ],
       "package": "com.kwonjihoo.PlanEasy",
@@ -96,7 +110,6 @@
           "kotlinVersion": "1.5.20"
         }
       ],
-
       "@react-native-google-signin/google-signin",
       [
         "expo-notifications",
@@ -114,7 +127,8 @@
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
         }
-      ]
+      ],
+      "expo-sqlite"
     ],
     "experiments": {
       "typedRoutes": true

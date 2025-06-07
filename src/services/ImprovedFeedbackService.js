@@ -1,18 +1,13 @@
 // src/services/ImprovedFeedbackService.js
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
-  format,
-  startOfWeek,
-  endOfWeek,
-  startOfMonth,
-  endOfMonth,
-  parseISO,
   differenceInDays,
-  sub,
-  isLastDayOfMonth,
+  endOfMonth,
+  endOfWeek,
+  format,
+  startOfMonth,
+  startOfWeek,
 } from "date-fns";
-import { ko } from "date-fns/locale";
-import * as Notifications from "expo-notifications";
 
 // 스토리지 키
 const STORAGE_KEYS = {
@@ -686,58 +681,169 @@ export const simulateProcessing = (callback, progressCallback) => {
 // 목표 처리 함수
 export const processGoalsForReport = (goalTargets) => {
   if (!goalTargets || !Array.isArray(goalTargets) || goalTargets.length === 0) {
-    return [];
+    return {
+      hasGoals: false,
+      message:
+        "아직 설정된 목표가 없습니다. 목표를 설정하면 더 체계적인 분석을 제공해드립니다.",
+      analysis: null,
+      goals: [],
+    };
   }
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  return goalTargets.map((goal) => {
+  // 향상된 목표 분석 로직
+  const processedGoals = goalTargets.map((goal) => {
     const targetDate = new Date(goal.targetDate);
     targetDate.setHours(0, 0, 0, 0);
-
     const daysLeft = differenceInDays(targetDate, today);
 
+    // D-Day 텍스트 생성
     let dDayText = "";
-    let message = "";
-
     if (daysLeft === 0) {
       dDayText = "D-Day";
-      message = "Today is the big day!";
     } else if (daysLeft > 0) {
       dDayText = `D-${daysLeft}`;
-
-      if (daysLeft <= 7) {
-        message = `Only ${daysLeft} days left - time to focus!`;
-      } else if (daysLeft <= 30) {
-        message = `${daysLeft} days remaining - keep making progress.`;
-      } else {
-        message = `${daysLeft} days until your target date.`;
-      }
     } else {
       dDayText = `D+${Math.abs(daysLeft)}`;
-      message = `Target date passed ${Math.abs(daysLeft)} days ago.`;
     }
 
-    // 목표 유형에 따른 추가 메시지 (간단한 예)
-    let additionalMessage = "";
-    if (goal.type) {
-      if (goal.type === "exam") {
-        additionalMessage = " 시험을 위한 계획적인 학습이 필요합니다.";
-      } else if (goal.type === "project") {
-        additionalMessage = " 프로젝트를 위한 단계별 접근이 중요합니다.";
-      } else if (goal.type === "habit") {
-        additionalMessage = " 꾸준한 습관 형성이 목표 달성의 열쇠입니다.";
-      }
+    // 목표 카테고리별 권장 일일 학습 시간 (시간)
+    const recommendedDailyHours = {
+      시험: 4,
+      자격증: 3,
+      어학: 2,
+      프로젝트: 3,
+      취업준비: 4,
+      기타: 2,
+    };
+
+    const category = goal.category || "기타";
+    const dailyTarget = recommendedDailyHours[category] || 2;
+
+    // 긴급도 및 우선순위 계산
+    let urgencyLevel = "여유";
+    let urgencyColor = "#50cebb";
+    let priorityAdvice = "";
+
+    if (daysLeft <= 0) {
+      urgencyLevel = "완료/마감";
+      urgencyColor = "#888888";
+      priorityAdvice =
+        daysLeft === 0 ? "오늘이 목표일입니다!" : "목표 날짜가 지났습니다.";
+    } else if (daysLeft <= 3) {
+      urgencyLevel = "매우긴급";
+      urgencyColor = "#FF4444";
+      priorityAdvice = `마지막 스퍼트! 하루 ${
+        dailyTarget + 1
+      }시간씩 집중하세요.`;
+    } else if (daysLeft <= 7) {
+      urgencyLevel = "긴급";
+      urgencyColor = "#FF8800";
+      priorityAdvice = `일주일 남았습니다. 하루 ${dailyTarget}시간씩 꾸준히!`;
+    } else if (daysLeft <= 14) {
+      urgencyLevel = "주의";
+      urgencyColor = "#FFAA00";
+      priorityAdvice = `2주 계획으로 하루 ${dailyTarget}시간씩 체계적으로 준비하세요.`;
+    } else if (daysLeft <= 30) {
+      urgencyLevel = "보통";
+      urgencyColor = "#FFD700";
+      priorityAdvice = `한 달 여유가 있습니다. 꾸준히 하루 ${dailyTarget}시간씩 진행하세요.`;
+    } else {
+      urgencyLevel = "여유";
+      urgencyColor = "#50cebb";
+      priorityAdvice = `충분한 시간이 있습니다. 하루 ${Math.max(
+        dailyTarget - 1,
+        1
+      )}시간씩 여유있게 준비하세요.`;
+    }
+
+    // 목표 유형별 구체적인 조언
+    let typeSpecificAdvice = "";
+    if (goal.category === "시험") {
+      typeSpecificAdvice = "기출문제 풀이와 오답노트 정리에 집중하세요.";
+    } else if (goal.category === "자격증") {
+      typeSpecificAdvice = "이론 학습과 실습을 병행하여 진행하세요.";
+    } else if (goal.category === "어학") {
+      typeSpecificAdvice = "듣기, 말하기, 읽기, 쓰기를 골고루 연습하세요.";
+    } else if (goal.category === "프로젝트") {
+      typeSpecificAdvice = "단계별 마일스톤을 설정하고 진행상황을 체크하세요.";
+    } else if (goal.category === "취업준비") {
+      typeSpecificAdvice =
+        "포트폴리오, 자기소개서, 면접 준비를 체계적으로 진행하세요.";
     }
 
     return {
       ...goal,
       daysLeft,
       dDayText,
-      message: message + additionalMessage,
+      urgencyLevel,
+      urgencyColor,
+      dailyTargetHours: dailyTarget,
+      priorityAdvice,
+      typeSpecificAdvice,
+      isOverdue: daysLeft < 0,
+      isToday: daysLeft === 0,
+      isUrgent: daysLeft <= 7 && daysLeft > 0,
     };
   });
+
+  // 현재 목표들 중 활성화된 목표 (미래 또는 오늘)
+  const activeGoals = processedGoals.filter((goal) => goal.daysLeft >= 0);
+  const urgentGoals = activeGoals.filter((goal) => goal.isUrgent);
+  const todayGoals = processedGoals.filter((goal) => goal.isToday);
+
+  // 전체 일일 목표 학습 시간 계산
+  const totalDailyTarget = activeGoals.reduce(
+    (sum, goal) => sum + goal.dailyTargetHours,
+    0
+  );
+
+  // 종합 상태 메시지 생성
+  let overallStatus = "";
+  if (todayGoals.length > 0) {
+    overallStatus = `🎯 오늘이 ${todayGoals.length}개 목표의 D-Day입니다!`;
+  } else if (urgentGoals.length > 0) {
+    overallStatus = `⚠️ ${urgentGoals.length}개의 긴급한 목표가 있습니다. 우선순위를 정해 집중하세요!`;
+  } else if (totalDailyTarget > 6) {
+    overallStatus = `📚 목표 달성을 위해 하루 ${totalDailyTarget}시간 학습이 필요합니다.`;
+  } else if (activeGoals.length > 0) {
+    overallStatus = `✅ 꾸준히 하루 ${totalDailyTarget}시간만 투자하면 목표 달성 가능합니다.`;
+  } else {
+    overallStatus = `✨ 모든 목표가 완료되었습니다. 새로운 목표를 설정해보세요!`;
+  }
+
+  // 분석 정보
+  const analysis =
+    activeGoals.length > 0
+      ? {
+          totalActiveGoals: activeGoals.length,
+          urgentGoalsCount: urgentGoals.length,
+          todayGoalsCount: todayGoals.length,
+          totalDailyTarget,
+          averageDaysLeft: Math.round(
+            activeGoals.reduce((sum, goal) => sum + goal.daysLeft, 0) /
+              activeGoals.length
+          ),
+          mostUrgentGoal: activeGoals.sort(
+            (a, b) => a.daysLeft - b.daysLeft
+          )[0],
+          longestGoal: activeGoals.sort((a, b) => b.daysLeft - a.daysLeft)[0],
+        }
+      : null;
+
+  return {
+    hasGoals: processedGoals.length > 0,
+    hasActiveGoals: activeGoals.length > 0,
+    overallStatus,
+    analysis,
+    goals: processedGoals,
+    activeGoals,
+    urgentGoals,
+    todayGoals,
+    message: overallStatus,
+  };
 };
 
 // 일간 리포트 생성 함수
@@ -790,11 +896,51 @@ const generateDailyReport = (date, data) => {
       (subjectAnalysis[subject] || 0) + (session.duration || 0);
   });
 
-  // 6. 목표 처리
-  const upcomingGoalsInfo = processGoalsForReport(goalTargets);
+  // 6. 목표 처리 - 향상된 분석
+  const goalsAnalysis = processGoalsForReport(goalTargets);
 
-  // 7. 템플릿 기반 인사이트 생성 (SimpleFeedbackService 방식)
-  const insightData = { totalHours, completionRate };
+  // 7. 목표 기반 학습 효율성 분석
+  let goalProgressAnalysis = "목표 정보가 없어 일반적인 분석을 제공합니다.";
+  let todayTargetHours = 0;
+  let progressRate = 0;
+
+  if (goalsAnalysis.hasActiveGoals) {
+    todayTargetHours = goalsAnalysis.analysis.totalDailyTarget;
+    progressRate =
+      todayTargetHours > 0
+        ? Math.round((totalHours / todayTargetHours) * 100)
+        : 0;
+
+    if (goalsAnalysis.todayGoals.length > 0) {
+      goalProgressAnalysis = `🎯 오늘은 ${goalsAnalysis.todayGoals.length}개 목표의 D-Day입니다! 최선을 다하세요.`;
+    } else if (goalsAnalysis.urgentGoals.length > 0) {
+      goalProgressAnalysis = `⚠️ ${goalsAnalysis.urgentGoals.length}개의 긴급한 목표가 있습니다. 목표 달성을 위해 하루 ${todayTargetHours}시간 학습이 필요합니다.`;
+    } else {
+      goalProgressAnalysis = `📈 목표 달성을 위해 하루 ${todayTargetHours}시간 학습이 권장됩니다.`;
+    }
+
+    // 진행률에 따른 추가 분석
+    if (progressRate >= 100) {
+      goalProgressAnalysis += ` 오늘 목표 학습량을 달성했습니다! (${progressRate}%)`;
+    } else if (progressRate >= 70) {
+      goalProgressAnalysis += ` 목표에 거의 도달했습니다. (${progressRate}%)`;
+    } else if (progressRate >= 30) {
+      goalProgressAnalysis += ` 목표의 ${progressRate}% 달성했습니다. 조금 더 노력해보세요.`;
+    } else if (totalHours > 0) {
+      goalProgressAnalysis += ` 목표 대비 ${progressRate}% 진행했습니다. 내일은 더 집중해보세요.`;
+    } else {
+      goalProgressAnalysis +=
+        " 아직 학습을 시작하지 않았습니다. 작은 것부터 시작해보세요.";
+    }
+  }
+
+  // 8. 향상된 템플릿 기반 인사이트 생성
+  const insightData = {
+    totalHours,
+    completionRate,
+    progressRate,
+    todayTargetHours,
+  };
   const insightTemplate = selectTemplate("DAILY_INSIGHTS", insightData);
   const recommendationTemplate = selectTemplate("RECOMMENDATIONS", insightData);
 
@@ -803,12 +949,29 @@ const generateDailyReport = (date, data) => {
     COMPLETION: completionRate.toString(),
   });
 
-  const recommendations = applyTemplate(recommendationTemplate, {
-    HOURS: totalHours.toString(),
-    COMPLETION: completionRate.toString(),
-  });
+  // 목표 기반 추천 사항 생성
+  let goalBasedRecommendations = "";
+  if (goalsAnalysis.hasActiveGoals && totalHours < todayTargetHours) {
+    const remainingHours = todayTargetHours - totalHours;
+    goalBasedRecommendations = `목표 달성을 위해 ${remainingHours.toFixed(
+      1
+    )}시간 더 학습하세요. `;
 
-  // 8. 최종 리포트 객체 반환
+    if (goalsAnalysis.urgentGoals.length > 0) {
+      const urgentGoal = goalsAnalysis.urgentGoals[0];
+      goalBasedRecommendations += `특히 "${urgentGoal.title}" (${urgentGoal.dDayText})에 집중하세요.`;
+    }
+  }
+
+  const recommendations =
+    applyTemplate(recommendationTemplate, {
+      HOURS: totalHours.toString(),
+      COMPLETION: completionRate.toString(),
+    }) +
+    " " +
+    goalBasedRecommendations;
+
+  // 9. 최종 리포트 객체 반환 - 향상된 정보 포함
   return {
     type: REPORT_TYPES.DAILY,
     date,
@@ -818,9 +981,22 @@ const generateDailyReport = (date, data) => {
     mostProductiveTime:
       mostProductiveHour !== null ? `${mostProductiveHour}시` : "N/A",
     subjectAnalysis,
-    upcomingGoalsInfo,
+    // 기존 목표 정보 (호환성)
+    upcomingGoalsInfo: goalsAnalysis.goals || [],
+    // 새로운 향상된 목표 분석
+    goalsAnalysis,
+    goalProgressAnalysis,
+    todayTargetHours,
+    progressRate,
     insights,
     recommendations,
+    // 추가 분석 정보
+    hourlyStudy,
+    taskAnalysis: {
+      total: taskCount,
+      completed: completedCount,
+      remaining: taskCount - completedCount,
+    },
     isAIGenerated: false, // 기본은 AI 생성 아님
   };
 };
@@ -932,11 +1108,56 @@ const generateWeeklyReport = (date, data) => {
   const completionRate =
     totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
 
-  // 6. 목표 정보 처리
-  const upcomingGoalsInfo = processGoalsForReport(goalTargets);
+  // 6. 목표 정보 처리 - 향상된 분석
+  const goalsAnalysis = processGoalsForReport(goalTargets);
 
-  // 7. 템플릿 기반 인사이트 생성
-  const insightData = { totalHours, completionRate };
+  // 7. 주간 목표 진행률 분석
+  let weeklyGoalAnalysis = "목표 정보가 없어 일반적인 분석을 제공합니다.";
+  let weeklyTargetHours = 0;
+  let weeklyProgressRate = 0;
+
+  if (goalsAnalysis.hasActiveGoals) {
+    weeklyTargetHours = goalsAnalysis.analysis.totalDailyTarget * 7; // 주간 목표
+    weeklyProgressRate =
+      weeklyTargetHours > 0
+        ? Math.round((totalHours / weeklyTargetHours) * 100)
+        : 0;
+
+    // 이번 주에 D-Day인 목표들
+    const thisWeekGoals = goalsAnalysis.activeGoals.filter(
+      (goal) => goal.daysLeft <= 7
+    );
+
+    if (thisWeekGoals.length > 0) {
+      weeklyGoalAnalysis = `🔥 이번 주에 ${thisWeekGoals.length}개 목표의 마감이 있습니다! `;
+      weeklyGoalAnalysis += thisWeekGoals
+        .map((goal) => `"${goal.title}" (${goal.dDayText})`)
+        .join(", ");
+    } else if (goalsAnalysis.urgentGoals.length > 0) {
+      weeklyGoalAnalysis = `⚠️ ${goalsAnalysis.urgentGoals.length}개의 긴급 목표가 있습니다. 주간 목표 학습량: ${weeklyTargetHours}시간`;
+    } else {
+      weeklyGoalAnalysis = `📅 목표 달성을 위한 주간 권장 학습량: ${weeklyTargetHours}시간`;
+    }
+
+    // 주간 진행률 분석
+    if (weeklyProgressRate >= 100) {
+      weeklyGoalAnalysis += ` 이번 주 목표를 달성했습니다! (${weeklyProgressRate}%)`;
+    } else if (weeklyProgressRate >= 70) {
+      weeklyGoalAnalysis += ` 주간 목표에 거의 도달했습니다. (${weeklyProgressRate}%)`;
+    } else if (weeklyProgressRate >= 30) {
+      weeklyGoalAnalysis += ` 주간 목표의 ${weeklyProgressRate}% 달성했습니다.`;
+    } else {
+      weeklyGoalAnalysis += ` 주간 목표 대비 ${weeklyProgressRate}% 진행했습니다. 남은 요일에 더 집중해보세요.`;
+    }
+  }
+
+  // 8. 템플릿 기반 인사이트 생성 - 목표 정보 포함
+  const insightData = {
+    totalHours,
+    completionRate,
+    weeklyProgressRate,
+    weeklyTargetHours,
+  };
   const insightTemplate = selectTemplate("WEEKLY_INSIGHTS", insightData);
   const recommendationTemplate = selectTemplate(
     "WEEKLY_RECOMMENDATIONS",
@@ -948,12 +1169,32 @@ const generateWeeklyReport = (date, data) => {
     COMPLETION: completionRate.toString(),
   });
 
-  const recommendations = applyTemplate(recommendationTemplate, {
-    HOURS: totalHours.toString(),
-    COMPLETION: completionRate.toString(),
-  });
+  // 목표 기반 주간 추천사항 생성
+  let weeklyGoalRecommendations = "";
+  if (goalsAnalysis.hasActiveGoals) {
+    if (weeklyTargetHours > totalHours) {
+      const remainingHours = weeklyTargetHours - totalHours;
+      weeklyGoalRecommendations = `다음 주까지 ${remainingHours.toFixed(
+        1
+      )}시간 더 학습하여 목표를 달성하세요. `;
+    }
 
-  // 8. 주간 테마와 집중 영역 생성 (기본값)
+    if (goalsAnalysis.urgentGoals.length > 0) {
+      weeklyGoalRecommendations += `긴급한 목표들에 우선순위를 두세요: ${goalsAnalysis.urgentGoals
+        .map((g) => g.title)
+        .join(", ")}`;
+    }
+  }
+
+  const recommendations =
+    applyTemplate(recommendationTemplate, {
+      HOURS: totalHours.toString(),
+      COMPLETION: completionRate.toString(),
+    }) +
+    " " +
+    weeklyGoalRecommendations;
+
+  // 9. 주간 테마와 집중 영역 생성 (목표 기반 개선)
   let weeklyTheme = "꾸준함의 가치";
   let focusAdvice = "시간 관리와 집중력 향상에 집중해보세요";
 
@@ -1004,7 +1245,7 @@ const generateWeeklyReport = (date, data) => {
     scheduleInsights += ` 주로 ${mainScheduleType[0]} 유형의 일정이 많았습니다.`;
   }
 
-  // 10. 최종 리포트 객체 반환
+  // 10. 최종 리포트 객체 반환 - 향상된 목표 분석 포함
   return {
     type: REPORT_TYPES.WEEKLY,
     startDate: startDateStr,
@@ -1019,7 +1260,13 @@ const generateWeeklyReport = (date, data) => {
     dailyCompletionRate,
     schedulesByDay,
     scheduleTypeCount,
-    upcomingGoalsInfo,
+    // 기존 목표 정보 (호환성)
+    upcomingGoalsInfo: goalsAnalysis.goals || [],
+    // 새로운 향상된 목표 분석
+    goalsAnalysis,
+    weeklyGoalAnalysis,
+    weeklyTargetHours,
+    weeklyProgressRate,
     insights,
     recommendations,
     weeklyTheme,
@@ -1160,14 +1407,59 @@ const generateMonthlyReport = (date, data) => {
     .slice(0, 5)
     .map(([task, count]) => ({ task, count }));
 
-  // 6. 목표 정보 처리
-  const upcomingGoalsInfo = processGoalsForReport(goalTargets);
+  // 6. 목표 정보 처리 - 향상된 분석
+  const goalsAnalysis = processGoalsForReport(goalTargets);
 
-  // 7. 템플릿 기반 인사이트 생성
+  // 7. 월간 목표 진행률 분석
+  let monthlyGoalAnalysis = "목표 정보가 없어 일반적인 분석을 제공합니다.";
+  let monthlyTargetHours = 0;
+  let monthlyProgressRate = 0;
+
+  if (goalsAnalysis.hasActiveGoals) {
+    monthlyTargetHours = goalsAnalysis.analysis.totalDailyTarget * daysInMonth; // 월간 목표
+    monthlyProgressRate =
+      monthlyTargetHours > 0
+        ? Math.round((totalHours / monthlyTargetHours) * 100)
+        : 0;
+
+    // 이번 달에 D-Day인 목표들
+    const thisMonthGoals = goalsAnalysis.activeGoals.filter(
+      (goal) => goal.daysLeft <= 30
+    );
+    const completedThisMonth = goalsAnalysis.goals.filter(
+      (goal) => goal.isOverdue && goal.daysLeft >= -30
+    );
+
+    if (thisMonthGoals.length > 0) {
+      monthlyGoalAnalysis = `🎯 이번 달에 ${thisMonthGoals.length}개 목표의 마감이 있습니다. `;
+      if (completedThisMonth.length > 0) {
+        monthlyGoalAnalysis += `이미 ${completedThisMonth.length}개 목표를 완료했습니다! `;
+      }
+    } else if (goalsAnalysis.urgentGoals.length > 0) {
+      monthlyGoalAnalysis = `📋 ${goalsAnalysis.urgentGoals.length}개의 목표가 진행 중입니다. 월간 목표 학습량: ${monthlyTargetHours}시간`;
+    } else {
+      monthlyGoalAnalysis = `📅 목표 달성을 위한 월간 권장 학습량: ${monthlyTargetHours}시간`;
+    }
+
+    // 월간 진행률 분석
+    if (monthlyProgressRate >= 100) {
+      monthlyGoalAnalysis += ` 이번 달 목표를 달성했습니다! (${monthlyProgressRate}%)`;
+    } else if (monthlyProgressRate >= 70) {
+      monthlyGoalAnalysis += ` 월간 목표에 거의 도달했습니다. (${monthlyProgressRate}%)`;
+    } else if (monthlyProgressRate >= 30) {
+      monthlyGoalAnalysis += ` 월간 목표의 ${monthlyProgressRate}% 달성했습니다.`;
+    } else {
+      monthlyGoalAnalysis += ` 월간 목표 대비 ${monthlyProgressRate}% 진행했습니다.`;
+    }
+  }
+
+  // 8. 템플릿 기반 인사이트 생성 - 목표 정보 포함
   const insightData = {
     totalHours,
     completionRate,
     activityRatio,
+    monthlyProgressRate,
+    monthlyTargetHours,
     DAYS: daysWithActivity.toString(),
     RATIO: activityRatio.toString(),
   };
@@ -1271,7 +1563,7 @@ const generateMonthlyReport = (date, data) => {
       : ""
   }`;
 
-  // 13. 최종 리포트 객체 반환
+  // 13. 최종 리포트 객체 반환 - 향상된 목표 분석 포함
   return {
     type: REPORT_TYPES.MONTHLY,
     month: format(monthStart, "yyyy년 MM월"),
@@ -1288,7 +1580,13 @@ const generateMonthlyReport = (date, data) => {
     schedulesByDay,
     schedulesByTimeSlot,
     frequentTasks,
-    upcomingGoalsInfo,
+    // 기존 목표 정보 (호환성)
+    upcomingGoalsInfo: goalsAnalysis.goals || [],
+    // 새로운 향상된 목표 분석
+    goalsAnalysis,
+    monthlyGoalAnalysis,
+    monthlyTargetHours,
+    monthlyProgressRate,
     insights,
     monthlyOverview,
     longTermRecommendations,
@@ -1463,110 +1761,9 @@ export const getSavedAIReports = async (reportType) => {
   }
 };
 
-// 알림 업데이트 함수
-export const updateReportScheduling = async (isSubscribed) => {
-  try {
-    // 구독 상태에 따라 알림 설정
-    if (isSubscribed) {
-      // 알림 권한 요청
-      const { status } = await Notifications.getPermissionsAsync();
-      if (status !== "granted") {
-        const { status: newStatus } =
-          await Notifications.requestPermissionsAsync();
-        if (newStatus !== "granted") {
-          console.log("알림 권한이 거부되었습니다");
-          await AsyncStorage.setItem(STORAGE_KEYS.NOTIFICATIONS_SETUP, "false");
-          return false;
-        }
-      }
+// 알림 관련 함수 제거됨 - 무료 버전에서는 자동 알림 없음
 
-      // 기존 알림 취소
-      await Notifications.cancelAllScheduledNotificationsAsync();
-
-      // 주간 리포트 알림 (매주 일요일 저녁 9시)
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: "주간 리포트 준비 완료",
-          body: "지난 한 주 활동에 대한 분석 리포트가 준비되었습니다.",
-          data: { reportType: REPORT_TYPES.WEEKLY },
-        },
-        trigger: {
-          weekday: 7, // 일요일
-          hour: 21,
-          minute: 0,
-          repeats: true,
-        },
-      });
-
-      // 월간 리포트 알림 (매월 마지막 날 저녁 9시)
-      // 알림 스케줄링이 복잡하므로 단순화하여 매월 28일로 설정
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: "월간 리포트 준비 완료",
-          body: "이번 달 활동에 대한 분석 리포트가 준비되었습니다.",
-          data: { reportType: REPORT_TYPES.MONTHLY },
-        },
-        trigger: {
-          day: 28,
-          hour: 21,
-          minute: 0,
-          repeats: true,
-        },
-      });
-
-      await AsyncStorage.setItem(STORAGE_KEYS.NOTIFICATIONS_SETUP, "true");
-      return true;
-    } else {
-      // 비구독자는 알림 취소
-      await Notifications.cancelAllScheduledNotificationsAsync();
-      await AsyncStorage.setItem(STORAGE_KEYS.NOTIFICATIONS_SETUP, "false");
-      return true;
-    }
-  } catch (error) {
-    console.error("알림 업데이트 오류:", error);
-    return false;
-  }
-};
-
-// 알림 핸들러 등록
-export const setupNotificationHandlers = async () => {
-  // 알림 핸들러 설정
-  Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowAlert: true,
-      shouldPlaySound: true,
-      shouldSetBadge: false,
-    }),
-  });
-
-  // 알림 응답 리스너 설정
-  Notifications.addNotificationResponseReceivedListener((response) => {
-    const data = response.notification.request.content.data;
-    console.log("알림에 응답함:", data);
-
-    // 여기서 필요한 처리 수행 가능
-  });
-
-  return true;
-};
-
-export const initializeNotifications = async () => {
-  try {
-    // 알림 핸들러 설정
-    await setupNotificationHandlers();
-    console.log("알림 시스템 초기화 완료");
-    return true;
-  } catch (error) {
-    console.error("알림 초기화 오류:", error);
-    return false;
-  }
-};
-
-export const initFeedbackService = (config = {}) => {
-  console.log("FeedbackService 초기화", config);
-  setupNotificationHandlers();
-  return true;
-};
+// 알림 관련 함수들 제거됨 - 무료 버전에서는 불필요
 
 // 내보내기
 export default {
@@ -1579,9 +1776,6 @@ export default {
   REPORT_TYPES,
   getSavedAIReports,
   processGoalsForReport,
-  updateReportScheduling,
-  setupNotificationHandlers,
   setReportCallback,
-  initFeedbackService,
   AUTO_REFRESH_INTERVALS,
 };

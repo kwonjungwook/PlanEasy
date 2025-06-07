@@ -879,8 +879,9 @@ export const infoModalStyles = StyleSheet.create({
     borderRadius: 10,
     width: "90%",
     maxWidth: 400,
-    maxHeight: "85%",
+    maxHeight: "90%",
     overflow: "hidden",
+    flexDirection: "column", // 명시적 지정
   },
   infoModalHeader: {
     padding: 16,
@@ -898,12 +899,17 @@ export const infoModalStyles = StyleSheet.create({
     padding: 4,
   },
   infoModalScrollContent: {
-    padding: 16,
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
   },
   infoModalText: {
     fontSize: 15,
     lineHeight: 24,
     color: "#333",
+    textAlign: "left",
+    marginBottom: 8,
+    paddingBottom: 16,
   },
   infoModalFooter: {
     borderTopWidth: 1,
@@ -970,9 +976,9 @@ export const resultModalStyles = StyleSheet.create({
   },
 });
 
-// 구독 관련 스타일
-export const subscriptionStyles = StyleSheet.create({
-  subscriptionBanner: {
+// 무료 제공 관련 스타일 (기존 구독 스타일 대체)
+export const freeServiceStyles = StyleSheet.create({
+  freeServiceBanner: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#FFF8E1",
@@ -981,13 +987,13 @@ export const subscriptionStyles = StyleSheet.create({
     borderRadius: 8,
     marginBottom: 16,
   },
-  subscriptionText: {
+  freeServiceText: {
     fontSize: 14,
     fontWeight: "500",
     color: "#333",
     marginLeft: 8,
   },
-  subscriptionButton: {
+  freeServiceButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -996,117 +1002,10 @@ export const subscriptionStyles = StyleSheet.create({
     borderRadius: 8,
     marginTop: 16,
   },
-  subscriptionButtonText: {
+  freeServiceButtonText: {
     fontSize: 14,
     fontWeight: "600",
     color: "#333",
-    marginLeft: 8,
-  },
-});
-
-// 구매 모달 스타일
-export const purchaseModalStyles = StyleSheet.create({
-  purchaseModalContent: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 20,
-    width: "90%",
-    maxWidth: 380,
-  },
-  purchaseModalTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#333",
-    textAlign: "center",
-    marginBottom: 20,
-  },
-  purchaseModalInfo: {
-    alignItems: "center",
-    marginBottom: 20,
-  },
-  purchaseModalIcon: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  purchaseModalName: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#333",
-    marginBottom: 6,
-  },
-  purchaseModalDesc: {
-    fontSize: 14,
-    color: "#666",
-    textAlign: "center",
-    marginBottom: 10,
-  },
-  purchaseModalPrice: {
-    fontSize: 16,
-    fontWeight: "bold",
-    color: "#FF9500",
-  },
-  purchaseModalQuestion: {
-    fontSize: 15,
-    color: "#333",
-    textAlign: "center",
-    marginVertical: 16,
-  },
-  purchaseModalButtons: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  purchaseModalButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: "center",
-  },
-  purchaseModalCancelButton: {
-    backgroundColor: "#f1f1f1",
-    marginRight: 8,
-  },
-  purchaseModalConfirmButton: {
-    backgroundColor: "#50cebb",
-    marginLeft: 8,
-  },
-  purchaseModalCancelText: {
-    color: "#666",
-    fontWeight: "bold",
-  },
-  purchaseModalConfirmText: {
-    color: "#fff",
-    fontWeight: "bold",
-  },
-  purchaseModalOr: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginVertical: 20,
-  },
-  purchaseModalLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: "#eee",
-  },
-  purchaseModalOrText: {
-    marginHorizontal: 10,
-    color: "#999",
-    fontSize: 14,
-  },
-  purchaseModalSubscribeButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#FFF8E1",
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  purchaseModalSubscribeText: {
-    color: "#333",
-    fontWeight: "bold",
     marginLeft: 8,
   },
 });
@@ -1207,11 +1106,10 @@ export const styles = StyleSheet.create({
   ...menuStyles,
   ...settingsStyles,
   ...infoModalStyles,
-  ...subscriptionStyles,
-  ...purchaseModalStyles,
+  ...resultModalStyles,
   ...componentStyles,
   ...newLayoutStyles,
-  ...resultModalStyles, // 추가
+  ...freeServiceStyles,
   centerTimerContainer: {
     flex: 1,
     justifyContent: "flex-start", // 중앙에서 위쪽으로 변경

@@ -1,26 +1,26 @@
-import React, { useState, useEffect } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  Alert,
-  Modal,
-  ActivityIndicator,
-  TextInput,
-  KeyboardAvoidingView,
-  Platform,
-  Image,
-  FlatList,
-  SafeAreaView,
-} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useFocusEffect } from "@react-navigation/native";
+import * as ImagePicker from "expo-image-picker";
+import React, { useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Image,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { useAuth } from "../context/AuthContext";
 import { useSubscription } from "../context/SubscriptionContext";
-import { useFocusEffect } from "@react-navigation/native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as ImagePicker from "expo-image-picker";
 
 // 캐릭터 아바타 목록 (이미지 URL 대신 로컬 리소스 ID를 사용하는 실제 앱에서는 require() 사용)
 // 여기서는 예시 URL을 사용합니다
@@ -141,14 +141,14 @@ const MyPage = ({ navigation }) => {
         "플랜이지는 학습과 일상 계획을 효율적으로 관리할 수 있는 종합 플래너 앱입니다. 시간표 관리, 일정 추적, 학습 타이머, AI 학습 피드백 등의 기능을 제공합니다.",
     },
     {
-      question: "무료로 사용할 수 있나요?",
+      question: "정말 모든 기능이 무료인가요?",
       answer:
-        "네, 기본 기능은 무료로 사용하실 수 있습니다. 다만 일부 고급 기능은 플랜이지 플러스 구독을 통해 이용하실 수 있습니다.",
+        "네! 플랜이지의 모든 기능이 완전 무료입니다. AI 분석, 무제한 일정 생성, 고급 통계 등 모든 프리미엄 기능을 자유롭게 이용하실 수 있습니다.",
     },
     {
-      question: "플랜이지 플러스 구독은 얼마인가요?",
+      question: "무료 제공으로 바뀐 이유가 궁금합니다.",
       answer:
-        "플랜이지 플러스 구독은 월 4,900원, 연 49,000원으로 제공됩니다. 학생 할인과 정기적인 프로모션도 진행하고 있으니 앱 내 알림을 확인해 주세요.",
+        "더 많은 사용자분들께 플랜이지의 모든 기능을 제공하고 싶어서 무료 전환을 결정했습니다. 앞으로도 광고 없이 깔끔한 환경에서 모든 기능을 무료로 이용하실 수 있습니다.",
     },
     {
       question: "알림 설정은 어디서 변경하나요?",
@@ -458,105 +458,64 @@ const MyPage = ({ navigation }) => {
 
     return (
       <View style={styles.sectionContainer}>
-        <Text style={styles.sectionTitle}>플랜이지 플러스</Text>
+        <Text style={styles.sectionTitle}>
+          플랜이지 - 모든 기능 무료 제공! 🎉
+        </Text>
 
-        {isSubscribed ? (
-          // 구독 중인 경우
-          <>
-            <View style={styles.subscribedStatusContainer}>
-              <View style={styles.subscribedBadge}>
-                <Ionicons name="crown" size={22} color="#FFD700" />
-              </View>
-              <View style={styles.subscribedInfo}>
-                <Text style={styles.subscribedTitle}>
-                  플랜이지 플러스 구독 중 ✨
-                </Text>
-                <Text style={styles.subscribedDetail}>
-                  {subscriptionData?.planType === "yearly"
-                    ? "연간 구독"
-                    : "월간 구독"}{" "}
-                  •
-                  {subscriptionData?.expiryDate
-                    ? ` 다음 결제일: ${new Date(
-                        subscriptionData.expiryDate
-                      ).toLocaleDateString("ko-KR")}`
-                    : " 무기한"}
-                </Text>
-              </View>
-            </View>
+        {/* 무료 제공 상태 표시 */}
+        <View style={styles.freeStatusContainer}>
+          <View style={styles.freeBadge}>
+            <Ionicons name="heart" size={22} color="#FF6B6B" />
+          </View>
+          <View style={styles.freeInfo}>
+            <Text style={styles.freeTitle}>
+              모든 프리미엄 기능 무료 이용 중! ✨
+            </Text>
+            <Text style={styles.freeDetail}>영구 무료 • 모든 기능 포함</Text>
+          </View>
+        </View>
 
-            <TouchableOpacity style={styles.linkRow} onPress={goToSubscription}>
-              <Text style={styles.linkLabel}>구독 관리</Text>
-              <Ionicons name="chevron-forward" size={20} color="#aaa" />
-            </TouchableOpacity>
-          </>
-        ) : (
-          // 미구독 상태
-          <>
-            <TouchableOpacity
-              style={styles.subscribePromoContainer}
-              onPress={goToSubscription}
-              activeOpacity={0.7}
-            >
-              <View style={styles.subscribePromoBadge}>
-                <Ionicons name="diamond" size={20} color="#1976D2" />
-              </View>
-              <View style={styles.subscribePromoContent}>
-                <Text style={styles.subscribePromoTitle}>
-                  플러스 구독으로 업그레이드 🌟
-                </Text>
-                <Text style={styles.subscribePromoDescription}>
-                  더 많은 기능과 혜택을 누려보세요
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={24} color="#50cebb" />
-            </TouchableOpacity>
+        <TouchableOpacity style={styles.linkRow} onPress={goToSubscription}>
+          <Text style={styles.linkLabel}>무료 제공 안내 보기</Text>
+          <Ionicons name="chevron-forward" size={20} color="#aaa" />
+        </TouchableOpacity>
 
-            <TouchableOpacity style={styles.linkRow} onPress={goToSubscription}>
-              <View style={styles.benefitRow}>
-                <Ionicons
-                  name="medal-outline"
-                  size={16}
-                  color="#50cebb"
-                  style={styles.benefitIcon}
-                />
-                <Text style={styles.benefitLabel}>무제한 일정 생성</Text>
-              </View>
-            </TouchableOpacity>
+        {/* 무료 기능 목록 */}
+        <TouchableOpacity style={styles.linkRow} onPress={goToSubscription}>
+          <View style={styles.benefitRow}>
+            <Ionicons
+              name="checkmark-circle"
+              size={16}
+              color="#4CAF50"
+              style={styles.benefitIcon}
+            />
+            <Text style={styles.benefitLabel}>무제한 일정 생성 - 무료</Text>
+          </View>
+        </TouchableOpacity>
 
-            <TouchableOpacity style={styles.linkRow} onPress={goToSubscription}>
-              <View style={styles.benefitRow}>
-                <Ionicons
-                  name="sparkles-outline"
-                  size={16}
-                  color="#50cebb"
-                  style={styles.benefitIcon}
-                />
-                <Text style={styles.benefitLabel}>AI 학습 분석 및 추천</Text>
-              </View>
-            </TouchableOpacity>
+        <TouchableOpacity style={styles.linkRow} onPress={goToSubscription}>
+          <View style={styles.benefitRow}>
+            <Ionicons
+              name="checkmark-circle"
+              size={16}
+              color="#4CAF50"
+              style={styles.benefitIcon}
+            />
+            <Text style={styles.benefitLabel}>AI 학습 분석 및 추천 - 무료</Text>
+          </View>
+        </TouchableOpacity>
 
-            <TouchableOpacity style={styles.linkRow} onPress={goToSubscription}>
-              <View style={styles.benefitRow}>
-                <Ionicons
-                  name="cloud-done-outline"
-                  size={16}
-                  color="#50cebb"
-                  style={styles.benefitIcon}
-                />
-                <Text style={styles.benefitLabel}>클라우드 동기화 및 백업</Text>
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.viewAllBenefitsButton}
-              onPress={goToSubscription}
-            >
-              <Text style={styles.viewAllBenefitsText}>모든 혜택 보기</Text>
-              <Ionicons name="arrow-forward" size={16} color="#50cebb" />
-            </TouchableOpacity>
-          </>
-        )}
+        <TouchableOpacity style={styles.linkRow} onPress={goToSubscription}>
+          <View style={styles.benefitRow}>
+            <Ionicons
+              name="checkmark-circle"
+              size={16}
+              color="#4CAF50"
+              style={styles.benefitIcon}
+            />
+            <Text style={styles.benefitLabel}>모든 프리미엄 기능 - 무료</Text>
+          </View>
+        </TouchableOpacity>
       </View>
     );
   };
@@ -1423,7 +1382,7 @@ const styles = StyleSheet.create({
   },
 
   // 구독 섹션 스타일
-  subscribedStatusContainer: {
+  freeStatusContainer: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#FFF8E1",
@@ -1434,7 +1393,7 @@ const styles = StyleSheet.create({
     borderColor: "#FFE082",
     width: "100%", // 부모 컨테이너 너비에 맞춤
   },
-  subscribedBadge: {
+  freeBadge: {
     width: 40,
     height: 40,
     borderRadius: 20,
@@ -1450,16 +1409,16 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     elevation: 3,
   },
-  subscribedInfo: {
+  freeInfo: {
     flex: 1,
   },
-  subscribedTitle: {
+  freeTitle: {
     fontSize: 16,
     fontWeight: "bold",
     color: "#333",
     marginBottom: 4,
   },
-  subscribedDetail: {
+  freeDetail: {
     fontSize: 14,
     color: "#666",
   },

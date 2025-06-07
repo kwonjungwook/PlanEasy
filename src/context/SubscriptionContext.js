@@ -1,6 +1,5 @@
 // src/context/SubscriptionContext.js
-import React, { createContext, useState, useEffect, useContext } from "react";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import React, { createContext, useContext, useEffect, useState } from "react";
 import { useAuth } from "./AuthContext";
 
 // 구독 관련 상수
@@ -11,51 +10,40 @@ const SubscriptionContext = createContext(null);
 
 export const SubscriptionProvider = ({ children }) => {
   const { user } = useAuth();
-  const [isSubscribed, setIsSubscribed] = useState(false);
-  const [subscriptionData, setSubscriptionData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  // 모든 기능을 무료로 제공하므로 항상 true로 설정
+  const [isSubscribed, setIsSubscribed] = useState(true);
+  const [subscriptionData, setSubscriptionData] = useState({
+    userId: "free_user",
+    planType: "free",
+    startDate: new Date().toISOString(),
+    expiryDate: null, // 무기한
+    paymentMethod: "free",
+    status: "active",
+  });
+  const [loading, setLoading] = useState(false); // 로딩 불필요
   const [error, setError] = useState(null);
 
-  // 초기 구독 상태 로드
+  // 초기 구독 상태 로드 - 무료 제공으로 변경
   useEffect(() => {
     const loadSubscriptionData = async () => {
       try {
-        setLoading(true);
+        setLoading(false); // 로딩 상태 비활성화
 
-        // 사용자가 로그인되어 있지 않으면 구독 취소
-        if (!user) {
-          setIsSubscribed(false);
-          setSubscriptionData(null);
-          return;
-        }
-
-        // AsyncStorage에서 구독 정보 가져오기
-        const storedData = await AsyncStorage.getItem(SUBSCRIPTION_KEY);
-
-        if (storedData) {
-          const parsedData = JSON.parse(storedData);
-
-          // 구독 만료 확인
-          const isExpired =
-            parsedData.expiryDate &&
-            new Date(parsedData.expiryDate) < new Date();
-
-          if (!isExpired) {
-            setIsSubscribed(true);
-            setSubscriptionData(parsedData);
-          } else {
-            // 만료된 구독 정보 제거
-            await AsyncStorage.removeItem(SUBSCRIPTION_KEY);
-            setIsSubscribed(false);
-            setSubscriptionData(null);
-          }
-        } else {
-          setIsSubscribed(false);
-          setSubscriptionData(null);
-        }
+        // 모든 사용자에게 무료로 모든 기능 제공
+        setIsSubscribed(true);
+        setSubscriptionData({
+          userId: user?.uid || "free_user",
+          planType: "free",
+          startDate: new Date().toISOString(),
+          expiryDate: null, // 무기한 무료 제공
+          paymentMethod: "free",
+          status: "active",
+        });
       } catch (err) {
         console.error("구독 정보 로드 오류:", err);
         setError(err.message);
+        // 오류가 발생해도 무료로 제공
+        setIsSubscribed(true);
       } finally {
         setLoading(false);
       }
@@ -64,90 +52,48 @@ export const SubscriptionProvider = ({ children }) => {
     loadSubscriptionData();
   }, [user]);
 
-  // 구독 시작 함수
+  // 구독 시작 함수 - 무료 제공 안내
   const subscribe = async (planType, paymentMethod) => {
     try {
-      if (!user) return false;
-
-      // 현재 날짜
-      const startDate = new Date();
-
-      // 만료일 계산 (월간: 1개월, 연간: 1년)
-      const expiryDate = new Date();
-      if (planType === "monthly") {
-        expiryDate.setMonth(expiryDate.getMonth() + 1);
-      } else {
-        expiryDate.setFullYear(expiryDate.getFullYear() + 1);
-      }
-
-      // 구독 데이터 생성
-      const newSubscription = {
-        userId: user.uid,
-        planType,
-        startDate: startDate.toISOString(),
-        expiryDate: expiryDate.toISOString(),
-        paymentMethod,
-        status: "active",
-      };
-
-      // AsyncStorage에 저장
-      await AsyncStorage.setItem(
-        SUBSCRIPTION_KEY,
-        JSON.stringify(newSubscription)
-      );
-
-      // 상태 업데이트
-      setIsSubscribed(true);
-      setSubscriptionData(newSubscription);
-
-      return true;
+      // 무료 제공 안내
+      return true; // 항상 성공 반환
     } catch (err) {
       console.error("구독 시작 오류:", err);
       setError(err.message);
-      return false;
+      return true; // 오류가 발생해도 무료로 제공
     }
   };
 
-  // 구독 취소 함수
+  // 구독 취소 함수 - 무료 제공이므로 취소 불필요
   const unsubscribe = async () => {
     try {
-      if (!subscriptionData) return false;
-
-      // 구독 상태 업데이트 (사용자는 만료일까지 서비스 이용 가능)
-      const updatedSubscription = {
-        ...subscriptionData,
-        status: "cancelled",
-      };
-
-      // AsyncStorage 업데이트
-      await AsyncStorage.setItem(
-        SUBSCRIPTION_KEY,
-        JSON.stringify(updatedSubscription)
-      );
-
-      // 상태 업데이트
-      setSubscriptionData(updatedSubscription);
-
+      // 무료 제공이므로 취소할 구독이 없음
       return true;
     } catch (err) {
       console.error("구독 취소 오류:", err);
       setError(err.message);
-      return false;
+      return true;
     }
   };
 
-  // 컨텍스트 값 정의
-  const contextValue = {
-    isSubscribed,
+  // 구독 상태 확인 함수 - 항상 true 반환
+  const checkSubscriptionStatus = async () => {
+    return true; // 모든 기능 무료 제공
+  };
+
+  // Context value
+  const value = {
+    isSubscribed: true, // 항상 구독 상태로 설정
     subscriptionData,
     loading,
     error,
     subscribe,
     unsubscribe,
+    checkSubscriptionStatus,
   };
 
   return (
-    <SubscriptionContext.Provider value={contextValue}>
+    <SubscriptionContext.Provider value={value}>
       {children}
     </SubscriptionContext.Provider>
   );

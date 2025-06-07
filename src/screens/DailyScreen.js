@@ -1,48 +1,43 @@
 // src/screens/DailyScreen.js
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { differenceInDays, format } from "date-fns";
+import { ko } from "date-fns/locale";
 import React, {
-  useState,
-  useEffect,
-  useRef,
   useCallback,
+  useEffect,
   useMemo,
+  useRef,
+  useState,
 } from "react";
 import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
+  Alert,
   Animated,
   AppState,
-  Alert,
   Modal,
-  TextInput,
+  ScrollView,
   Switch,
+  Text,
+  TextInput,
+  TouchableOpacity,
   Vibration,
+  View,
 } from "react-native";
-import { usePlanner } from "../context/PlannerContext";
-import { format, differenceInDays } from "date-fns";
-import { ko } from "date-fns/locale";
 import CustomDatePicker from "../components/CustomDatePicker";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import styles from "../styles/DailyStyle";
+import RewardPopup from "../components/RewardPopup";
+import { generateDailyChallenge } from "../components/dailybadge";
 import HeaderBar from "../components/layout/HeaderBar";
-import { useNavigation } from "@react-navigation/native";
+import { useNotifications } from "../context/NotificationContext";
+import { usePlanner } from "../context/PlannerContext";
+import { useProgress } from "../context/ProgressContext";
+import { useSubscription } from "../context/SubscriptionContext";
 import {
+  checkAndRescheduleNotifications,
   checkMissedSchedules,
   getNotificationEnabled,
   toggleNotifications,
-  checkAndRescheduleNotifications,
   updateNotificationsForSchedules,
 } from "../services/NotificationService";
-import { useNotifications } from "../context/NotificationContext";
-import { useProgress } from "../context/ProgressContext";
-import RewardPopup from "../components/RewardPopup";
-import {
-  timeToMinutes,
-  checkIfHoliday,
-  generateDailyChallenge,
-} from "../components/dailybadge";
-import { useSubscription } from "../context/SubscriptionContext";
+import styles from "../styles/DailyStyle";
 
 // Toast icons object
 const TOAST_ICONS = {
@@ -614,11 +609,6 @@ export default function DailyScreen({ navigation }) {
       updateGoalTarget(editingGoalId, goalData);
     } else {
       addGoalTarget(goalData);
-
-      // 구독자가 아니고 사용 가능한 슬롯이 있는 경우에만 슬롯 감소
-      if (!isSubscribed && unusedDDaySlots > 0) {
-        await handleGoalAdded();
-      }
     }
 
     // 입력 초기화 및 모달 닫기
@@ -947,80 +937,22 @@ export default function DailyScreen({ navigation }) {
           >
             <Text style={styles.goalHeader}>🎯 D-Day</Text>
             <View style={styles.slotCountContainer}>
-              <Text style={styles.slotCountText}>
-                {isSubscribed ? "무제한" : `${goalTargets.length}/${ddaySlots}`}
-              </Text>
+              <Text style={styles.slotCountText}>무제한 사용 가능</Text>
             </View>
-
-            {!isSubscribed && unusedDDaySlots > 0 && (
-              <View style={styles.unusedSlotIndicator}>
-                <Text style={styles.unusedSlotText}>+{unusedDDaySlots}</Text>
-              </View>
-            )}
-
-            {isSubscribed && (
-              <View style={styles.subscribedBadge}>
-                <Text style={styles.subscribedText}>PRO</Text>
-              </View>
-            )}
           </TouchableOpacity>
 
           <View style={styles.goalHeaderRight}>
             <TouchableOpacity
               style={[styles.addGoalButtonCute]}
               onPress={() => {
-                // 구독자인 경우 항상 추가 가능하게 변경
-                if (
-                  isSubscribed ||
-                  goalTargets.length < ddaySlots ||
-                  unusedDDaySlots > 0
-                ) {
-                  setGoalTitle("");
-                  setGoalDate(new Date());
-                  setEditingGoalId(null);
-                  setShowGoalModal(true);
-                } else {
-                  // 비구독자이고 슬롯이 부족한 경우 구매 안내
-                  Alert.alert(
-                    "D-Day 슬롯 부족",
-                    `추가 D-Day를 설정하려면 슬롯이 필요합니다.\n\n방법 1: ${nextSlotPrice} 포인트로 구매\n방법 2: 구독으로 무제한 사용`,
-                    [
-                      {
-                        text: "구독하기",
-                        onPress: () => navigation.navigate("Subscription"),
-                      },
-                      {
-                        text: "포인트로 구매",
-                        onPress: async () => {
-                          if (points >= nextSlotPrice) {
-                            const success = await purchaseDDaySlot();
-                            if (success) {
-                              showInlineToast(
-                                "D-Day 슬롯을 구매했습니다. 이제 새 D-Day를 추가할 수 있습니다.",
-                                "success"
-                              );
-                            }
-                          } else {
-                            showInlineToast(
-                              `포인트가 부족합니다. (필요: ${nextSlotPrice}P)`,
-                              "warning"
-                            );
-                          }
-                        },
-                      },
-                      { text: "취소", style: "cancel" },
-                    ]
-                  );
-                }
+                // 모든 기능이 무료이므로 항상 추가 가능
+                setGoalTitle("");
+                setGoalDate(new Date());
+                setEditingGoalId(null);
+                setShowGoalModal(true);
               }}
             >
-              <Text style={styles.addGoalButtonTextCute}>
-                {!isSubscribed &&
-                goalTargets.length >= ddaySlots &&
-                unusedDDaySlots <= 0
-                  ? "구매 필요"
-                  : "+ 추가"}
-              </Text>
+              <Text style={styles.addGoalButtonTextCute}>+ 추가</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -1053,7 +985,7 @@ export default function DailyScreen({ navigation }) {
               style={styles.goalScroll}
               contentContainerStyle={styles.goalScrollContent}
             >
-              {goalTargets.map((goal) => (
+              {goalTargets.map((goal, index) => (
                 <GoalItem key={goal.id} goal={goal} />
               ))}
 
