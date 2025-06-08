@@ -113,15 +113,17 @@
       </intent-filter>
 
       <!-- 추가 URL 스키마 -->
-      <intent-filter>
+      <!-- 추가 URL 스키마 (Firebase Hosting 기반만 남김) -->
+      <intent-filter android:autoVerify="true">
         <action android:name="android.intent.action.VIEW" />
         <category android:name="android.intent.category.DEFAULT" />
         <category android:name="android.intent.category.BROWSABLE" />
-        <data android:scheme="planeasy" />
-        <data android:scheme="http" android:host="naveroauth" />
-        <data android:scheme="localhost" android:host="19006" />
-        <data android:scheme="planeasy-firebase" android:host="auth" android:path="/handler" />
+        <data
+          android:scheme="https"
+          android:host="planeasy-74132.web.app"
+          android:pathPrefix="/handler" />
       </intent-filter>
+
     </activity>
 
     <!-- 카카오 로그인 핸들러 액티비티 -->
