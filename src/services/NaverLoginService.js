@@ -3,13 +3,15 @@ import { NativeModules, Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 const { NaverLoginModule } = NativeModules;
 
-console.log("모든 네이티브 모듈:", Object.keys(NativeModules));
-console.log("네이버 모듈:", NaverLoginModule);
+if (__DEV__) {
+  console.log("모든 네이티브 모듈:", Object.keys(NativeModules));
+  console.log("네이버 모듈:", NaverLoginModule);
 
-// 네이티브 모듈 상태 확인
-console.log("네이티브 모듈 상태:", NaverLoginModule ? "있음" : "없음");
-if (NaverLoginModule) {
-  console.log("사용 가능한 메서드:", Object.keys(NaverLoginModule).join(", "));
+  // 네이티브 모듈 상태 확인
+  console.log("네이티브 모듈 상태:", NaverLoginModule ? "있음" : "없음");
+  if (NaverLoginModule) {
+    console.log("사용 가능한 메서드:", Object.keys(NaverLoginModule).join(", "));
+  }
 }
 
 const NAVER_CONFIG = {

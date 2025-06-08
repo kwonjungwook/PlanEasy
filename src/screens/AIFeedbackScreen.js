@@ -4,13 +4,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useNavigation } from "@react-navigation/native";
 import { format, sub } from "date-fns";
 import { ko } from "date-fns/locale";
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -19,6 +13,8 @@ import {
   Text,
   TouchableOpacity,
   View,
+  Modal,
+  TextInput,
 } from "react-native";
 import { ToastEventSystem } from "../components/common/AutoToast";
 import HeaderBar from "../components/layout/HeaderBar";
@@ -98,11 +94,11 @@ const CollapsibleCard = ({
  */
 const GoalSection = ({ goalTargets }) => {
   // 목표 데이터 처리
-  const processedGoals = useMemo(() => {
+  const goalsAnalysis = useMemo(() => {
     return EnhancedFeedbackService.processGoalsForReport(goalTargets);
   }, [goalTargets]);
 
-  const hasGoals = processedGoals && processedGoals.length > 0;
+  const hasGoals = goalsAnalysis && goalsAnalysis.hasGoals && goalsAnalysis.goals.length > 0;
 
   return (
     <CollapsibleCard
@@ -111,43 +107,135 @@ const GoalSection = ({ goalTargets }) => {
       initiallyExpanded={true}
     >
       {hasGoals ? (
-        processedGoals.map((goal, index) => {
-          let badgeStyle;
-
-          if (goal.daysLeft === 0) {
-            badgeStyle = styles.dDayToday;
-          } else if (goal.daysLeft <= 7) {
-            badgeStyle = styles.dDayNear;
-          } else {
-            badgeStyle = styles.dDayFar;
-          }
-
-          return (
-            <View key={goal.id || index} style={styles.goalDetailCard}>
-              <View style={styles.goalDetailHeader}>
-                <Text style={styles.goalDetailTitle}>{goal.title}</Text>
-                <View style={[styles.dDayBadgeSmall, badgeStyle]}>
-                  <Text style={styles.dDayBadgeText}>{goal.dDayText}</Text>
-                </View>
-              </View>
-              <Text style={styles.goalDetailMessage}>{goal.message}</Text>
+        <>
+          {/* 전체 상태 메시지 */}
+          {goalsAnalysis.overallStatus && (
+            <View style={{ padding: 12, backgroundColor: "#f0f8ff", borderRadius: 8, marginBottom: 12 }}>
+              <Text style={{ fontSize: 14, fontWeight: "500", color: "#333", textAlign: "center" }}>
+                {goalsAnalysis.overallStatus}
+              </Text>
             </View>
-          );
-        })
+          )}
+          
+          {/* 개별 목표 표시 */}
+          {goalsAnalysis.goals.map((goal, index) => {
+            let badgeStyle;
+            let badgeColor = "#50cebb";
+
+            if (goal.daysLeft === 0) {
+              badgeStyle = styles.dDayToday;
+              badgeColor = "#FF4444";
+            } else if (goal.daysLeft < 0) {
+              badgeStyle = styles.dDayFar;
+              badgeColor = "#888888";
+            } else if (goal.daysLeft <= 3) {
+              badgeStyle = styles.dDayNear;
+              badgeColor = "#FF4444";
+            } else if (goal.daysLeft <= 7) {
+              badgeStyle = styles.dDayNear;
+              badgeColor = "#FF8800";
+            } else if (goal.daysLeft <= 14) {
+              badgeStyle = styles.dDayFar;
+              badgeColor = "#FFAA00";
+            } else {
+              badgeStyle = styles.dDayFar;
+              badgeColor = "#50cebb";
+            }
+
+            return (
+              <View key={goal.id || index} style={styles.goalDetailCard}>
+                <View style={styles.goalDetailHeader}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.goalDetailTitle}>{goal.title}</Text>
+                    {goal.category && (
+                      <Text style={{ fontSize: 12, color: "#666", marginTop: 2 }}>📂 {goal.category}</Text>
+                    )}
+                  </View>
+                  <View style={[styles.dDayBadgeSmall, { backgroundColor: badgeColor }]}>
+                    <Text style={styles.dDayBadgeText}>{goal.dDayText}</Text>
+                  </View>
+                </View>
+                
+                {/* 목표 날짜 표시 */}
+                <Text style={{ fontSize: 12, color: "#888", marginBottom: 8 }}>
+                  📅 목표일: {new Date(goal.targetDate).toLocaleDateString('ko-KR')}
+                </Text>
+                
+                {/* 우선순위 조언 */}
+                {goal.priorityAdvice && (
+                  <Text style={[styles.goalDetailMessage, { color: "#555", marginBottom: 4 }]}>
+                    💡 {goal.priorityAdvice}
+                  </Text>
+                )}
+                
+                {/* 타입별 조언 */}
+                {goal.typeSpecificAdvice && (
+                  <Text style={[styles.goalDetailMessage, { color: "#666", fontSize: 12 }]}>
+                    🎯 {goal.typeSpecificAdvice}
+                  </Text>
+                )}
+              </View>
+            );
+          })}
+
+          {/* 목표 분석 정보 */}
+          {goalsAnalysis.analysis && (
+            <View style={{ marginTop: 12, padding: 12, backgroundColor: "#f9f9f9", borderRadius: 8 }}>
+              <Text style={{ fontSize: 13, fontWeight: "500", marginBottom: 8, color: "#333" }}>📊 목표 현황</Text>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", flexWrap: "wrap" }}>
+                <Text style={{ fontSize: 12, color: "#666" }}>활성 목표: {goalsAnalysis.analysis.totalActiveGoals}개</Text>
+                {goalsAnalysis.analysis.urgentGoalsCount > 0 && (
+                  <Text style={{ fontSize: 12, color: "#FF4444" }}>긴급: {goalsAnalysis.analysis.urgentGoalsCount}개</Text>
+                )}
+                {goalsAnalysis.analysis.todayGoalsCount > 0 && (
+                  <Text style={{ fontSize: 12, color: "#FF4444", fontWeight: "bold" }}>오늘 D-Day: {goalsAnalysis.analysis.todayGoalsCount}개</Text>
+                )}
+              </View>
+              {goalsAnalysis.analysis.totalDailyTarget > 0 && (
+                <Text style={{ fontSize: 12, color: "#666", marginTop: 4 }}>
+                  일일 권장 학습시간: {goalsAnalysis.analysis.totalDailyTarget}시간
+                </Text>
+              )}
+            </View>
+          )}
+        </>
       ) : (
         <View style={{ padding: 16, alignItems: "center" }}>
-          <Text style={{ color: "#666", fontStyle: "italic" }}>
-            예정된 D-Day 일정이 없습니다.
+          <Text style={{ color: "#666", fontStyle: "italic", marginBottom: 12 }}>
+            설정된 D-Day 목표가 없습니다.
           </Text>
+          <TouchableOpacity
+            style={{
+              backgroundColor: "#50cebb",
+              paddingHorizontal: 20,
+              paddingVertical: 10,
+              borderRadius: 8,
+              marginBottom: 8,
+            }}
+            onPress={() => {
+              Alert.alert(
+                "목표 등록",
+                "목표를 등록하시겠습니까?",
+                [
+                  { text: "취소", style: "cancel" },
+                  {
+                    text: "등록",
+                    onPress: showGoalRegistrationModal
+                  }
+                ]
+              );
+            }}
+          >
+            <Text style={{ color: "white", fontWeight: "500" }}>🎯 목표 등록하기</Text>
+          </TouchableOpacity>
           <Text
             style={{
               color: "#888",
               fontSize: 12,
-              marginTop: 8,
               textAlign: "center",
             }}
           >
-            목표나 중요 일정을 등록하면 여기에 표시됩니다.
+            시험, 자격증, 프로젝트 등의 목표를 등록하여 D-Day를 추적해보세요.
           </Text>
         </View>
       )}
@@ -395,6 +483,7 @@ const AIFeedbackScreen = () => {
     setSelectedDate,
     studySessions = {},
     goalTargets = [],
+    addGoalTarget,
   } = usePlanner() || {};
 
   // 구독 상태
@@ -412,6 +501,15 @@ const AIFeedbackScreen = () => {
   const [savedWeeklyReports, setSavedWeeklyReports] = useState({});
   const [savedMonthlyReports, setSavedMonthlyReports] = useState({});
   const [notificationsSetup, setNotificationsSetup] = useState(false);
+  
+  // 목표 등록 모달 상태
+  const [showGoalModal, setShowGoalModal] = useState(false);
+  const [goalForm, setGoalForm] = useState({
+    title: '',
+    category: '시험',
+    targetDate: '',
+    description: ''
+  });
 
   // 참조
   const autoRefreshTimer = useRef(null);
@@ -422,6 +520,72 @@ const AIFeedbackScreen = () => {
   const handleUpgrade = useCallback(() => {
     navigation.navigate("Subscription");
   }, [navigation]);
+
+  // 목표 등록 모달 열기
+  const showGoalRegistrationModal = useCallback(() => {
+    setShowGoalModal(true);
+  }, []);
+
+  // 날짜 유효성 검사
+  const validateDate = (dateString) => {
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(dateString)) return false;
+    
+    const date = new Date(dateString);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    return date instanceof Date && !isNaN(date) && date >= today;
+  };
+
+  // 목표 등록 처리
+  const handleGoalSubmit = useCallback(async () => {
+    if (!goalForm.title.trim()) {
+      Alert.alert('입력 오류', '목표 제목을 입력해주세요.');
+      return;
+    }
+    
+    if (!goalForm.targetDate.trim()) {
+      Alert.alert('입력 오류', '목표일을 입력해주세요.');
+      return;
+    }
+    
+    if (!validateDate(goalForm.targetDate)) {
+      Alert.alert('날짜 오류', '올바른 날짜 형식(YYYY-MM-DD)으로 입력하고, 오늘 이후의 날짜를 선택해주세요.');
+      return;
+    }
+
+    try {
+      const success = await addGoalTarget({
+        title: goalForm.title.trim(),
+        category: goalForm.category,
+        targetDate: goalForm.targetDate,
+        description: goalForm.description.trim(),
+      });
+
+      if (success) {
+        setShowGoalModal(false);
+        setGoalForm({
+          title: '',
+          category: '시험',
+          targetDate: '',
+          description: ''
+        });
+        ToastEventSystem.showToast('목표가 등록되었습니다!', 2000);
+      } else {
+        Alert.alert('오류', '목표 등록에 실패했습니다.');
+      }
+    } catch (error) {
+      console.error('목표 등록 오류:', error);
+      Alert.alert('오류', '목표 등록 중 문제가 발생했습니다.');
+    }
+  }, [goalForm, addGoalTarget]);
+
+  // 오늘 날짜를 YYYY-MM-DD 형식으로 반환
+  const getTodayString = () => {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  };
 
   // 저장된 리포트 로드
   const loadSavedReports = useCallback(async () => {
@@ -1153,6 +1317,179 @@ const AIFeedbackScreen = () => {
       >
         {renderReport()}
       </ScrollView>
+
+      {/* 목표 등록 모달 */}
+      <Modal
+        visible={showGoalModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowGoalModal(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' }}>
+          <View style={{ 
+            backgroundColor: 'white', 
+            margin: 20, 
+            borderRadius: 12, 
+            padding: 20, 
+            width: '90%',
+            maxHeight: '80%' 
+          }}>
+            <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 20, textAlign: 'center' }}>
+              🎯 목표 등록
+            </Text>
+            
+            {/* 목표 제목 */}
+            <Text style={{ fontSize: 14, fontWeight: '500', marginBottom: 8, color: '#333' }}>목표 제목 *</Text>
+            <TextInput
+              style={{
+                borderWidth: 1,
+                borderColor: '#ddd',
+                borderRadius: 8,
+                padding: 12,
+                marginBottom: 16,
+                fontSize: 16
+              }}
+              value={goalForm.title}
+              onChangeText={(text) => setGoalForm(prev => ({ ...prev, title: text }))}
+              placeholder="예: 토익 900점 달성"
+              maxLength={50}
+            />
+            
+            {/* 카테고리 선택 */}
+            <Text style={{ fontSize: 14, fontWeight: '500', marginBottom: 8, color: '#333' }}>카테고리</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 16 }}>
+              {['시험', '자격증', '어학', '프로젝트', '취업준비', '기타'].map((category) => (
+                <TouchableOpacity
+                  key={category}
+                  style={{
+                    backgroundColor: goalForm.category === category ? '#50cebb' : '#f0f0f0',
+                    paddingHorizontal: 12,
+                    paddingVertical: 6,
+                    borderRadius: 16,
+                    marginRight: 8,
+                    marginBottom: 8,
+                  }}
+                  onPress={() => setGoalForm(prev => ({ ...prev, category }))}
+                >
+                  <Text style={{
+                    color: goalForm.category === category ? 'white' : '#333',
+                    fontSize: 12
+                  }}>
+                    {category}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            
+            {/* 목표일 */}
+            <Text style={{ fontSize: 14, fontWeight: '500', marginBottom: 8, color: '#333' }}>목표일 *</Text>
+            <View style={{ marginBottom: 16 }}>
+              <TextInput
+                style={{
+                  borderWidth: 1,
+                  borderColor: validateDate(goalForm.targetDate) || !goalForm.targetDate ? '#ddd' : '#FF4444',
+                  borderRadius: 8,
+                  padding: 12,
+                  fontSize: 16
+                }}
+                value={goalForm.targetDate}
+                onChangeText={(text) => {
+                  // 숫자와 하이픈만 허용
+                  const cleanText = text.replace(/[^0-9-]/g, '');
+                  // 자동 하이픈 삽입
+                  let formattedText = cleanText;
+                  if (cleanText.length >= 4 && cleanText.charAt(4) !== '-') {
+                    formattedText = cleanText.slice(0, 4) + '-' + cleanText.slice(4);
+                  }
+                  if (formattedText.length >= 7 && formattedText.charAt(7) !== '-') {
+                    formattedText = formattedText.slice(0, 7) + '-' + formattedText.slice(7);
+                  }
+                  // 최대 길이 제한
+                  if (formattedText.length <= 10) {
+                    setGoalForm(prev => ({ ...prev, targetDate: formattedText }));
+                  }
+                }}
+                placeholder="YYYY-MM-DD 형식으로 입력"
+                keyboardType="numeric"
+                maxLength={10}
+              />
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 }}>
+                <Text style={{ fontSize: 12, color: '#888' }}>예: {new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}</Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    const oneWeekLater = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+                    setGoalForm(prev => ({ ...prev, targetDate: oneWeekLater }));
+                  }}
+                >
+                  <Text style={{ fontSize: 12, color: '#50cebb' }}>1주일 후</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => {
+                    const oneMonthLater = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+                    setGoalForm(prev => ({ ...prev, targetDate: oneMonthLater }));
+                  }}
+                >
+                  <Text style={{ fontSize: 12, color: '#50cebb' }}>1달 후</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+            
+            {/* 설명 */}
+            <Text style={{ fontSize: 14, fontWeight: '500', marginBottom: 8, color: '#333' }}>설명 (선택사항)</Text>
+            <TextInput
+              style={{
+                borderWidth: 1,
+                borderColor: '#ddd',
+                borderRadius: 8,
+                padding: 12,
+                marginBottom: 20,
+                fontSize: 16,
+                height: 80,
+                textAlignVertical: 'top'
+              }}
+              value={goalForm.description}
+              onChangeText={(text) => setGoalForm(prev => ({ ...prev, description: text }))}
+              placeholder="목표에 대한 상세 설명을 입력하세요"
+              multiline
+              maxLength={200}
+            />
+            
+            {/* 버튼들 */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+              <TouchableOpacity
+                style={{
+                  flex: 1,
+                  backgroundColor: '#f0f0f0',
+                  padding: 12,
+                  borderRadius: 8,
+                  marginRight: 8,
+                  alignItems: 'center'
+                }}
+                onPress={() => {
+                  setShowGoalModal(false);
+                  setGoalForm({ title: '', category: '시험', targetDate: '', description: '' });
+                }}
+              >
+                <Text style={{ color: '#666', fontWeight: '500' }}>취소</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={{
+                  flex: 1,
+                  backgroundColor: '#50cebb',
+                  padding: 12,
+                  borderRadius: 8,
+                  marginLeft: 8,
+                  alignItems: 'center'
+                }}
+                onPress={handleGoalSubmit}
+              >
+                <Text style={{ color: 'white', fontWeight: '500' }}>등록</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };

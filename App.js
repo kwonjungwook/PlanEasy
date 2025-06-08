@@ -1,28 +1,26 @@
 // App.js
-import "react-native-url-polyfill/auto";
-import React, { useEffect, useRef, useState } from "react";
-import { NavigationContainer } from "@react-navigation/native";
-import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { createStackNavigator } from "@react-navigation/stack";
 import { Ionicons } from "@expo/vector-icons";
-import {
-  View,
-  StatusBar,
-  Text,
-  LogBox,
-  Platform,
-  Settings,
-  Linking,
-  Alert,
-  TouchableOpacity,
-} from "react-native";
-import * as SplashScreen from "expo-splash-screen";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as KakaoLogin from "@react-native-seoul/kakao-login";
+import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import { NavigationContainer } from "@react-navigation/native";
+import { createStackNavigator } from "@react-navigation/stack";
+import * as SplashScreen from "expo-splash-screen";
+import React, { useEffect, useRef, useState } from "react";
+import {
+  Alert,
+  Linking,
+  LogBox,
+  Platform,
+  StatusBar,
+  Text,
+  View,
+} from "react-native";
+import "react-native-url-polyfill/auto";
 import NaverLoginService from "./src/services/NaverLoginService";
-import { initializeNotifications } from "./src/services/ImprovedFeedbackService";
-import { OVERLAY_PERMISSION } from "expo-modules-core";
-import * as IntentLauncher from "expo-intent-launcher";
+// import { initializeNotifications } from "./src/services/ImprovedFeedbackService"; // 함수가 존재하지 않음
+
+// 🔥 AutoToast 컴포넌트 추가 - 수정된 import
 
 // 경고 무시 설정 (불필요한 경고 무시)
 LogBox.ignoreLogs([
@@ -38,43 +36,45 @@ SplashScreen.preventAutoHideAsync();
 import app, { auth } from "./src/firebaseConfig";
 
 // Context Providers
-import { PlannerProvider } from "./src/context/PlannerContext";
-import { NotificationProvider } from "./src/context/NotificationContext";
-import { ProgressProvider } from "./src/context/ProgressContext";
 import { AuthProvider } from "./src/context/AuthContext";
+import { NotificationProvider } from "./src/context/NotificationContext";
+import { PlannerProvider } from "./src/context/PlannerContext";
+import { ProgressProvider } from "./src/context/ProgressContext";
 import { SubscriptionProvider } from "./src/context/SubscriptionContext"; // New Subscription Provider
 
 // Screens
-import LoginScreen from "./src/screens/LoginScreen";
 import AIFeedbackScreen from "./src/screens/AIFeedbackScreen";
-import StudyTimerScreen from "./src/screens/StudyTimerScreen";
+import BadgesScreen from "./src/screens/BadgesScreen";
+import CalendarEditor from "./src/screens/CalendarEditor";
+import CalendarScreen from "./src/screens/CalendarScreen";
+import DailyScreen from "./src/screens/DailyScreen";
+import EditScheduleScreen from "./src/screens/EditScheduleScreen";
+import LevelScreen from "./src/screens/LevelScreen";
+import LoginScreen from "./src/screens/LoginScreen";
 import MyPage from "./src/screens/MyPage";
-import FAQ from "./src/screens2/FAQ";
 import NotificationsScreen from "./src/screens/NotificationsScreen";
 import PointHistoryScreen from "./src/screens/PointHistoryScreen";
 import PointsScreen from "./src/screens/PointsScreen";
-import LevelScreen from "./src/screens/LevelScreen";
-import StreakScreen from "./src/screens/StreakScreen";
-import BadgesScreen from "./src/screens/BadgesScreen";
-import CalendarScreen from "./src/screens/CalendarScreen";
 import ScheduleScreen from "./src/screens/ScheduleScreen";
-import DailyScreen from "./src/screens/DailyScreen";
-import EditScheduleScreen from "./src/screens/EditScheduleScreen";
-import CalendarEditor from "./src/screens/CalendarEditor";
-import WeeklyTimetableScreen from "./src/screens/WeeklyTimetableScreen";
+import StreakScreen from "./src/screens/StreakScreen";
+import StudyTimerScreen from "./src/screens/StudyTimerScreen";
 import SubscriptionScreen from "./src/screens/SubscriptionScreen"; // New Subscription Screen
-import TermsAgreementScreen from "./src/screens/TermsAgreementScreen"; // New Subscription Screen
+import WeeklyTimetableScreen from "./src/screens/WeeklyTimetableScreen";
+import FAQ from "./src/screens2/FAQ";
+
+// AutoToast 컴포넌트 import
+import AutoToast from "./src/components/common/AutoToast";
 
 // Notification service imports
+import * as Notifications from "expo-notifications";
 import {
-  defineBackgroundTask,
-  setupAndroidChannels,
   addNotificationListeners,
+  defineBackgroundTask,
   getExpoPushTokenAsync,
   handleNotificationReceived,
   handleNotificationResponse,
+  setupAndroidChannels,
 } from "./src/services/NotificationService";
-import * as Notifications from "expo-notifications";
 
 let isNaverInitialized = false;
 let isKakaoInitialized = false;
@@ -352,11 +352,11 @@ function AppNavigator() {
     try {
       // 이미 초기화되었으면 스킵
       if (isKakaoInitialized) {
-        console.log("카카오 SDK 이미 초기화됨, 스킵");
+        if (__DEV__) console.log("카카오 SDK 이미 초기화됨, 스킵");
         return true;
       }
 
-      console.log("카카오 SDK 초기화 시작");
+      if (__DEV__) console.log("카카오 SDK 초기화 시작");
 
       if (!KakaoLogin) {
         console.error("카카오 로그인 SDK를 찾을 수 없습니다");
@@ -388,11 +388,11 @@ function AppNavigator() {
     try {
       // 이미 초기화되었으면 스킵
       if (isNaverInitialized) {
-        console.log("네이버 SDK 이미 초기화됨, 스킵");
+        if (__DEV__) console.log("네이버 SDK 이미 초기화됨, 스킵");
         return true;
       }
 
-      console.log("네이버 SDK 초기화 시작");
+      if (__DEV__) console.log("네이버 SDK 초기화 시작");
 
       // 객체 형태로 설정값 전달
       const naverConfig = {
@@ -418,7 +418,7 @@ function AppNavigator() {
   // 소셜 로그인 SDK 초기화 함수 - 컴포넌트 레벨에 선언
   const initializeSocialSDKs = async () => {
     try {
-      console.log("소셜 로그인 SDK 초기화 시작...");
+      if (__DEV__) console.log("소셜 로그인 SDK 초기화 시작...");
 
       // 카카오 SDK 초기화
       await initializeKakaoSDK();
@@ -426,7 +426,7 @@ function AppNavigator() {
       // 네이버 SDK 초기화
       await initializeNaverSDK();
 
-      console.log("소셜 로그인 SDK 초기화 완료");
+      if (__DEV__) console.log("소셜 로그인 SDK 초기화 완료");
       return true;
     } catch (error) {
       console.error("소셜 로그인 SDK 초기화 오류:", error);
@@ -437,12 +437,13 @@ function AppNavigator() {
   // 알림 설정 함수 - 컴포넌트 레벨에 선언
   const setupNotifications = async () => {
     try {
-      console.log("알림 시스템 설정 시작...");
+      if (__DEV__) console.log("알림 시스템 설정 시작...");
 
       // 현재 알림 상태 확인
       const scheduledNotifications =
         await Notifications.getAllScheduledNotificationsAsync();
-      console.log(`현재 예약된 알림 수: ${scheduledNotifications.length}`);
+      if (__DEV__)
+        console.log(`현재 예약된 알림 수: ${scheduledNotifications.length}`);
 
       // 백그라운드 태스크 정의
       defineBackgroundTask();
@@ -480,7 +481,7 @@ function AppNavigator() {
         }
       );
 
-      console.log("알림 시스템 설정 완료");
+      if (__DEV__) console.log("알림 시스템 설정 완료");
       return true;
     } catch (error) {
       console.error("알림 설정 오류:", error);
@@ -491,14 +492,16 @@ function AppNavigator() {
   // prepareApp 함수 내에 오버레이 권한 확인 코드 추가 (수정된 prepareApp 함수)
   const prepareApp = async () => {
     try {
-      console.log("앱 초기화 작업 시작...");
+      if (__DEV__) console.log("앱 초기화 작업 시작...");
 
       // 소셜 로그인 SDK 초기화
       await initializeSocialSDKs();
 
       // 환경 확인
-      console.log("NODE_ENV:", process.env.NODE_ENV);
-      console.log("__DEV__:", __DEV__);
+      if (__DEV__) {
+        console.log("NODE_ENV:", process.env.NODE_ENV);
+        console.log("__DEV__:", __DEV__);
+      }
 
       // Firebase 상태 확인
       if (!app) console.warn("Firebase 앱 초기화 상태 확인 중...");
@@ -540,9 +543,9 @@ function AppNavigator() {
       // 알림 설정
       await setupNotifications();
 
-      await initializeNotifications();
+      // await initializeNotifications(); // 함수가 존재하지 않아 주석 처리
 
-      console.log("앱 초기화 완료");
+      if (__DEV__) console.log("앱 초기화 완료");
       setAppIsReady(true);
     } catch (e) {
       console.warn("앱 초기화 오류:", e);
@@ -653,20 +656,20 @@ function AppNavigator() {
 function App() {
   return (
     <ErrorBoundary>
-      {/* 전체 앱 트리를 React.StrictMode로 감싸기 */}
-      <React.StrictMode>
-        <AuthProvider>
-          <SubscriptionProvider>
-            <PlannerProvider>
-              <NotificationProvider>
-                <ProgressProvider>
+      <AuthProvider>
+        <SubscriptionProvider>
+          <PlannerProvider>
+            <NotificationProvider>
+              <ProgressProvider>
+                <>
                   <AppNavigator />
-                </ProgressProvider>
-              </NotificationProvider>
-            </PlannerProvider>
-          </SubscriptionProvider>
-        </AuthProvider>
-      </React.StrictMode>
+                  <AutoToast />
+                </>
+              </ProgressProvider>
+            </NotificationProvider>
+          </PlannerProvider>
+        </SubscriptionProvider>
+      </AuthProvider>
     </ErrorBoundary>
   );
 }

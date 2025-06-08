@@ -2,7 +2,7 @@
   "expo": {
     "name": "PlanEasy",
     "slug": "PlanEasy",
-    "version": "1.0.0",
+    "version": "4.0.0",
     "entryPoint": "./index.js",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -17,9 +17,7 @@
     "newArchEnabled": false,
     "android": {
       "googleServicesFile": "./google-services.json",
-      "permissions": [
-        "SCHEDULE_EXACT_ALARM"
-      ],
+      "permissions": ["SCHEDULE_EXACT_ALARM"],
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -33,10 +31,7 @@
               "scheme": "com.kwonjihoo.PlanEasy"
             }
           ],
-          "category": [
-            "BROWSABLE",
-            "DEFAULT"
-          ]
+          "category": ["BROWSABLE", "DEFAULT"]
         },
         {
           "action": "VIEW",
@@ -46,10 +41,7 @@
               "host": "oauth"
             }
           ],
-          "category": [
-            "BROWSABLE",
-            "DEFAULT"
-          ]
+          "category": ["BROWSABLE", "DEFAULT"]
         },
         {
           "action": "VIEW",
@@ -59,10 +51,7 @@
               "host": "oauth"
             }
           ],
-          "category": [
-            "BROWSABLE",
-            "DEFAULT"
-          ]
+          "category": ["BROWSABLE", "DEFAULT"]
         },
         {
           "action": "VIEW",
@@ -72,13 +61,11 @@
               "host": "oauth"
             }
           ],
-          "category": [
-            "BROWSABLE",
-            "DEFAULT"
-          ]
+          "category": ["BROWSABLE", "DEFAULT"]
         }
       ],
       "package": "com.kwonjihoo.PlanEasy",
+      "versionCode": 4,
       "extraMetaData": {
         "com.google.firebase.messaging.default_notification_color": "@color/white"
       }

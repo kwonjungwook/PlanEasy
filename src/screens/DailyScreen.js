@@ -13,6 +13,7 @@ import {
   Alert,
   Animated,
   AppState,
+  FlatList,
   Modal,
   ScrollView,
   Switch,
@@ -22,10 +23,11 @@ import {
   Vibration,
   View,
 } from "react-native";
+import AutoToast from "../components/common/AutoToast";
 import CustomDatePicker from "../components/CustomDatePicker";
-import RewardPopup from "../components/RewardPopup";
 import { generateDailyChallenge } from "../components/dailybadge";
 import HeaderBar from "../components/layout/HeaderBar";
+import RewardPopup from "../components/RewardPopup";
 import { useNotifications } from "../context/NotificationContext";
 import { usePlanner } from "../context/PlannerContext";
 import { useProgress } from "../context/ProgressContext";
@@ -79,9 +81,12 @@ export default function DailyScreen({ navigation }) {
     recentUnlocks,
     clearRecentUnlocks,
     addPoints,
+    deductPoints, // 포인트 차감 함수 추가
     nextSlotPrice, // 이 속성을 추가
     purchaseDDaySlot, // 이 함수도 필요
     handleGoalAdded,
+    rewardTaskCompletion, // 🔥 추가: ProgressContext의 일정 완료 함수
+    undoTaskCompletion, // 🔥 추가: ProgressContext의 일정 취소 함수
   } = useProgress();
 
   const {
@@ -106,7 +111,7 @@ export default function DailyScreen({ navigation }) {
   const [editingGoalId, setEditingGoalId] = useState(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [isDDaySectionExpanded, setIsDDaySectionExpanded] = useState(false);
-  const [dDaySectionHeight] = useState(new Animated.Value(0));
+  const dDaySectionHeight = useRef(new Animated.Value(0)).current;
 
   // Context menu state
   const [contextMenuVisible, setContextMenuVisible] = useState(false);
@@ -130,6 +135,9 @@ export default function DailyScreen({ navigation }) {
 
   // Toast management
   const [inlineToasts, setInlineToasts] = useState([]);
+
+  // Processing state for preventing duplicate clicks
+  const [processingTasks, setProcessingTasks] = useState(new Set());
 
   // Challenge state
   const [dailyChallenge, setDailyChallenge] = useState(null);
@@ -189,7 +197,9 @@ export default function DailyScreen({ navigation }) {
           const states = JSON.parse(statesData);
           const isExpanded = states.isDDaySectionExpanded || false;
           setIsDDaySectionExpanded(isExpanded);
-          dDaySectionHeight.setValue(isExpanded ? 1 : 0);
+          if (dDaySectionHeight && dDaySectionHeight.setValue) {
+            dDaySectionHeight.setValue(isExpanded ? 1 : 0);
+          }
         }
       } catch (error) {
         console.log("섹션 상태 불러오기 오류:", error);
@@ -279,6 +289,15 @@ export default function DailyScreen({ navigation }) {
     }
   }, [level]);
 
+  // 🚀 컴포넌트 언마운트 시 타이머 정리
+  useEffect(() => {
+    return () => {
+      if (handleTaskUIEffects.saveTimer) {
+        clearTimeout(handleTaskUIEffects.saveTimer);
+      }
+    };
+  }, []);
+
   // =================== MEMOIZED VALUES ===================
 
   // Sort today's schedules by time
@@ -331,11 +350,13 @@ export default function DailyScreen({ navigation }) {
     const newExpandedState = !isDDaySectionExpanded;
     setIsDDaySectionExpanded(newExpandedState);
 
-    Animated.timing(dDaySectionHeight, {
-      toValue: newExpandedState ? 1 : 0,
-      duration: 300,
-      useNativeDriver: false,
-    }).start();
+    if (dDaySectionHeight) {
+      Animated.timing(dDaySectionHeight, {
+        toValue: newExpandedState ? 1 : 0,
+        duration: 300,
+        useNativeDriver: false,
+      }).start();
+    }
 
     if (!newExpandedState && contextMenuVisible) {
       setContextMenuVisible(false);
@@ -370,162 +391,139 @@ export default function DailyScreen({ navigation }) {
     }
   };
 
-  const handleTaskCompletion = async (task) => {
+  // 🔥 단순화된 UI 효과 처리 함수들
+  const handleTaskUIEffects = async (task, isCompletion) => {
     try {
-      const todayStr = new Date().toISOString().split("T")[0];
-      const taskKey = `${task.task}_${task.startTime}_${task.endTime}_${todayStr}`;
+      // task.id를 사용하여 일관성 있는 키 생성
+      const taskKey =
+        task.id ||
+        `${new Date().toISOString().split("T")[0]}_${task.task}_${
+          task.startTime
+        }_${task.endTime}`;
 
-      // 이미 완료된 일정인지 확인
-      if (taskCompletionRecord[taskKey]) {
-        console.log("이미 완료된 일정:", taskKey);
-        return false;
+      if (isCompletion) {
+        // 완료 기록 저장 (사운드는 이미 즉시 재생됨)
+        setTaskCompletionRecord((prev) => ({
+          ...prev,
+          [taskKey]: true,
+        }));
+
+        updateSeasonalProgress(task);
+      } else {
+        // 완료 기록 삭제
+        setTaskCompletionRecord((prev) => {
+          const updated = { ...prev };
+          delete updated[taskKey];
+          return updated;
+        });
       }
 
-      playCompleteSound();
-
-      // 포인트 계산
-      const basePoints = 5;
-      const hour = parseInt(task.startTime.split(":")[0]);
-      let bonusPoints = 0;
-
-      if (hour < 7) bonusPoints += 3; // 이른 아침 보너스
-      if (hour >= 22) bonusPoints += 2; // 늦은 밤 보너스
-
-      const totalPoints = basePoints + bonusPoints;
-
-      // 상태 업데이트
-      const newTotalCompletedTasks = totalCompletedTasks + 1;
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      setTotalCompletedTasks(newTotalCompletedTasks);
-      setLastCompletionDate(today.toISOString());
-
-      if (hour < 12) {
-        setMorningTasksCompleted(morningTasksCompleted + 1);
-      } else if (hour >= 18) {
-        setEveningTasksCompleted(eveningTasksCompleted + 1);
+      // 🚀 배치 저장 최적화: 200ms 후에 저장하여 연속 클릭 시 중복 저장 방지
+      if (handleTaskUIEffects.saveTimer) {
+        clearTimeout(handleTaskUIEffects.saveTimer);
       }
-
-      // 완료 기록 저장
-      setTaskCompletionRecord((prev) => ({
-        ...prev,
-        [taskKey]: true,
-      }));
-
-      // 포인트 추가
-      if (typeof addPoints === "function") {
-        await addPoints(totalPoints, "일정 완료");
-      }
-
-      showInlineToast(`"${task.task}" 완료! +${totalPoints}P 적립`, "success");
-      updateSeasonalProgress(task);
-      await saveTaskCompletionData();
-
-      return true;
+      handleTaskUIEffects.saveTimer = setTimeout(() => {
+        saveTaskCompletionData();
+      }, 100);
     } catch (error) {
-      console.error("태스크 완료 처리 오류:", error);
-      return false;
-    }
-  };
-
-  const handleTaskUncompletion = async (task) => {
-    try {
-      const todayStr = new Date().toISOString().split("T")[0];
-      const taskKey = `${task.task}_${task.startTime}_${task.endTime}_${todayStr}`;
-
-      // 완료 기록이 없으면 리턴
-      if (!taskCompletionRecord[taskKey]) {
-        console.log("완료되지 않은 일정:", taskKey);
-        return false;
-      }
-
-      // 포인트 차감 계산 (획득한 포인트만큼 차감)
-      const basePoints = 5;
-      const hour = parseInt(task.startTime.split(":")[0]);
-      let bonusPoints = 0;
-
-      if (hour < 7) bonusPoints += 3;
-      if (hour >= 22) bonusPoints += 2;
-
-      const totalPoints = basePoints + bonusPoints;
-
-      // 상태 업데이트
-      const newTotalCompletedTasks = Math.max(0, totalCompletedTasks - 1);
-      setTotalCompletedTasks(newTotalCompletedTasks);
-
-      if (hour < 12) {
-        const newMorningCount = Math.max(0, morningTasksCompleted - 1);
-        setMorningTasksCompleted(newMorningCount);
-      } else if (hour >= 18) {
-        const newEveningCount = Math.max(0, eveningTasksCompleted - 1);
-        setEveningTasksCompleted(newEveningCount);
-      }
-
-      // 완료 기록 삭제
-      setTaskCompletionRecord((prev) => {
-        const updated = { ...prev };
-        delete updated[taskKey];
-        return updated;
-      });
-
-      // 포인트 차감
-      if (typeof deductPoints === "function") {
-        await deductPoints(totalPoints, "일정 취소");
-      }
-
-      showInlineToast(`"${task.task}" 취소! -${totalPoints}P 차감`, "warning");
-      await saveTaskCompletionData();
-
-      return true;
-    } catch (error) {
-      console.error("태스크 취소 처리 오류:", error);
-      return false;
+      console.error("태스크 UI 효과 처리 오류:", error);
     }
   };
 
   const toggleTaskCompletion = useCallback(
     async (taskId) => {
-      console.log(`[DailyScreen] 태스크 상태 토글: ${taskId}`);
+      // 🔥 동시 클릭 방지
+      if (processingTasks.has(taskId)) {
+        return;
+      }
 
       const task = todaySchedules.find((s) => s.id === taskId);
-      if (!task) return;
+      if (!task) {
+        return;
+      }
+
+      // 처리 시작 표시
+      setProcessingTasks((prev) => new Set([...prev, taskId]));
 
       try {
         // 현재 완료 상태 확인
         const isCurrentlyCompleted = completedTasks[taskId];
 
-        // UI 상태 즉시 업데이트 (더 나은 UX)
+        // 🔥 즉시 UI 업데이트 및 토스트 표시 (Optimistic Update)
         setCompletedTasks((prev) => ({
           ...prev,
           [taskId]: !isCurrentlyCompleted,
         }));
 
-        // 비동기 처리
-        let success;
+        // 즉시 사운드 재생 (토스트는 백그라운드에서 실제 포인트로 표시)
         if (!isCurrentlyCompleted) {
-          success = await handleTaskCompletion(task);
-        } else {
-          success = await handleTaskUncompletion(task);
+          playCompleteSound(); // 즉시 사운드 재생
         }
 
-        // 실패 시 상태 롤백
-        if (!success) {
+        // 🔥 백그라운드에서 비동기 처리 (더욱 최적화)
+        const backgroundProcess = async () => {
+          let result;
+          if (!isCurrentlyCompleted) {
+            result = await rewardTaskCompletion(task, isCurrentlyCompleted);
+            if (result.success) {
+              handleTaskUIEffects(task, true);
+              showInlineToast(`+${result.points}P 적립!`, "success");
+            }
+          } else {
+            result = await undoTaskCompletion(task, isCurrentlyCompleted);
+            if (result.success) {
+              handleTaskUIEffects(task, false);
+              showInlineToast(`-${result.points}P 차감`, "warning");
+            }
+          }
+
+          // 실패 시에만 UI 롤백
+          if (!result.success) {
+            setCompletedTasks((prev) => ({
+              ...prev,
+              [taskId]: isCurrentlyCompleted, // 원래 상태로 되돌림
+            }));
+          }
+
+          // 처리 완료 표시
+          setProcessingTasks((prev) => {
+            const newSet = new Set(prev);
+            newSet.delete(taskId);
+            return newSet;
+          });
+        };
+
+        // 백그라운드 처리 시작 (await 하지 않음)
+        backgroundProcess().catch((error) => {
+          console.error("백그라운드 처리 오류:", error);
+          // 오류 시 UI 롤백
           setCompletedTasks((prev) => ({
             ...prev,
             [taskId]: isCurrentlyCompleted,
           }));
-        }
+          // 처리 완료 표시
+          setProcessingTasks((prev) => {
+            const newSet = new Set(prev);
+            newSet.delete(taskId);
+            return newSet;
+          });
+        });
       } catch (error) {
         console.error("태스크 상태 변경 오류:", error);
-        // 에러 시 상태 롤백
+        // 오류 시 UI 롤백
         setCompletedTasks((prev) => ({
           ...prev,
-          [taskId]: completedTasks[taskId],
+          [taskId]: isCurrentlyCompleted,
         }));
+        // 처리 완료 표시
+        setProcessingTasks((prev) => {
+          const newSet = new Set(prev);
+          newSet.delete(taskId);
+          return newSet;
+        });
       }
     },
-    [todaySchedules, completedTasks]
+    [todaySchedules, completedTasks, processingTasks]
   );
 
   const updateSeasonalProgress = (task) => {
@@ -609,6 +607,11 @@ export default function DailyScreen({ navigation }) {
       updateGoalTarget(editingGoalId, goalData);
     } else {
       addGoalTarget(goalData);
+
+      // 구독자가 아니고 사용 가능한 슬롯이 있는 경우에만 슬롯 감소
+      if (!isSubscribed && unusedDDaySlots > 0) {
+        await handleGoalAdded();
+      }
     }
 
     // 입력 초기화 및 모달 닫기
@@ -937,22 +940,80 @@ export default function DailyScreen({ navigation }) {
           >
             <Text style={styles.goalHeader}>🎯 D-Day</Text>
             <View style={styles.slotCountContainer}>
-              <Text style={styles.slotCountText}>무제한 사용 가능</Text>
+              <Text style={styles.slotCountText}>
+                {isSubscribed ? "무제한" : `${goalTargets.length}/${ddaySlots}`}
+              </Text>
             </View>
+
+            {!isSubscribed && unusedDDaySlots > 0 && (
+              <View style={styles.unusedSlotIndicator}>
+                <Text style={styles.unusedSlotText}>+{unusedDDaySlots}</Text>
+              </View>
+            )}
+
+            {isSubscribed && (
+              <View style={styles.subscribedBadge}>
+                <Text style={styles.subscribedText}>PRO</Text>
+              </View>
+            )}
           </TouchableOpacity>
 
           <View style={styles.goalHeaderRight}>
             <TouchableOpacity
               style={[styles.addGoalButtonCute]}
               onPress={() => {
-                // 모든 기능이 무료이므로 항상 추가 가능
-                setGoalTitle("");
-                setGoalDate(new Date());
-                setEditingGoalId(null);
-                setShowGoalModal(true);
+                // 구독자인 경우 항상 추가 가능하게 변경
+                if (
+                  isSubscribed ||
+                  goalTargets.length < ddaySlots ||
+                  unusedDDaySlots > 0
+                ) {
+                  setGoalTitle("");
+                  setGoalDate(new Date());
+                  setEditingGoalId(null);
+                  setShowGoalModal(true);
+                } else {
+                  // 비구독자이고 슬롯이 부족한 경우 구매 안내
+                  Alert.alert(
+                    "D-Day 슬롯 부족",
+                    `추가 D-Day를 설정하려면 슬롯이 필요합니다.\n\n방법 1: ${nextSlotPrice} 포인트로 구매\n방법 2: 구독으로 무제한 사용`,
+                    [
+                      {
+                        text: "구독하기",
+                        onPress: () => navigation.navigate("Subscription"),
+                      },
+                      {
+                        text: "포인트로 구매",
+                        onPress: async () => {
+                          if (points >= nextSlotPrice) {
+                            const success = await purchaseDDaySlot();
+                            if (success) {
+                              showInlineToast(
+                                "D-Day 슬롯을 구매했습니다. 이제 새 D-Day를 추가할 수 있습니다.",
+                                "success"
+                              );
+                            }
+                          } else {
+                            showInlineToast(
+                              `포인트가 부족합니다. (필요: ${nextSlotPrice}P)`,
+                              "warning"
+                            );
+                          }
+                        },
+                      },
+                      { text: "취소", style: "cancel" },
+                    ]
+                  );
+                }
               }}
             >
-              <Text style={styles.addGoalButtonTextCute}>+ 추가</Text>
+              <Text style={styles.addGoalButtonTextCute}>
+                {!isSubscribed &&
+                goalTargets.length >= ddaySlots &&
+                unusedDDaySlots <= 0
+                  ? "구매 필요"
+                  : "+ 추가"}
+              </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -970,11 +1031,12 @@ export default function DailyScreen({ navigation }) {
           style={[
             styles.goalContentContainer,
             {
-              maxHeight: dDaySectionHeight.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0, 160],
-              }),
-              opacity: dDaySectionHeight,
+              maxHeight:
+                dDaySectionHeight?.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0, 160],
+                }) || 0,
+              opacity: dDaySectionHeight || 0,
             },
           ]}
         >
@@ -985,7 +1047,7 @@ export default function DailyScreen({ navigation }) {
               style={styles.goalScroll}
               contentContainerStyle={styles.goalScrollContent}
             >
-              {goalTargets.map((goal, index) => (
+              {goalTargets.map((goal) => (
                 <GoalItem key={goal.id} goal={goal} />
               ))}
 
@@ -1032,25 +1094,22 @@ export default function DailyScreen({ navigation }) {
 
       {/* Schedule List */}
       <View style={styles.scrollContainer}>
-        <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={true}
-          persistentScrollbar={true}
-          scrollEnabled={true}
-          removeClippedSubviews={false}
-        >
-          {todaySchedules.length > 0 ? (
-            todaySchedules.map((schedule) => (
-              <ScheduleItem key={schedule.id} schedule={schedule} />
-            ))
-          ) : (
+        <FlatList
+          data={todaySchedules}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => <ScheduleItem schedule={item} />}
+          ListEmptyComponent={() => (
             <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>오늘은 여유로운 하루네요!</Text>
-              <Text style={styles.emptySubText}>예정된 일정이 없습니다.</Text>
+              <Text style={styles.emptyTitle}>오늘은 일정이 없어요</Text>
+              <Text style={styles.emptySubText}>쉬는 날을 즐기세요!</Text>
             </View>
           )}
-        </ScrollView>
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator
+          removeClippedSubviews
+          initialNumToRender={10}
+          getItemLayout={(_, i) => ({ length: 72, offset: 72 * i, index: i })} // 셀 높이 72px 가정
+        />
       </View>
 
       {/* Toast Manager */}
@@ -1130,6 +1189,9 @@ export default function DailyScreen({ navigation }) {
           <ContextMenu />
         </TouchableOpacity>
       )}
+
+      {/* 🔥 전역 토스트 메시지 컴포넌트 */}
+      <AutoToast />
     </View>
   );
 }

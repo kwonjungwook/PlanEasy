@@ -286,7 +286,7 @@ const initNaverSDK = async () => {
 };
 
 /**
- * Sign in with Kakao - Native implementation (KakaoLoginService 사용)
+ * Sign in with Kakao - Native implementation (네이티브 방식)
  * @returns {Promise<Object|null>} User data or null
  */
 const signInWithKakaoNative = async () => {
@@ -430,13 +430,12 @@ const unlinkNaverAccount = async () => {
 };
 
 /**
- * Unlink Kakao account
+ * Unlink Kakao account - 네이티브 방식
  * @returns {Promise<boolean>} Success status
  */
-// unlinkKakaoAccount 함수 수정 (KakaoLoginService 사용)
 const unlinkKakaoAccount = async () => {
   try {
-    console.log("[AuthService] 카카오 계정 연결 해제 시작");
+    console.log("[AuthService] 카카오 계정 연결 해제 시작 (네이티브 방식)");
 
     // KakaoLoginService의 unlink 함수 사용
     const result = await KakaoLoginService.unlink();
@@ -493,18 +492,18 @@ export const useGoogleAuth = () => {
   };
 
   /**
-   * Sign in with Kakao
-   * @returns {Promise<Object|null>} User data or null
-   */
-  const signInWithKakao = async () => {
-    try {
-      console.log("Starting Kakao sign-in process");
-      return await signInWithKakaoNative();
-    } catch (error) {
-      console.error("Kakao sign-in error:", error);
-      throw error;
-    }
-  };
+  * Sign in with Kakao - 메인 함수 (네이티브 방식 사용)
+  * @returns {Promise<Object|null>} User data or null
+  */
+const signInWithKakao = async () => {
+  try {
+  console.log("Starting Kakao sign-in process (Native)");
+  return await signInWithKakaoNative();
+  } catch (error) {
+  console.error("Kakao sign-in error:", error);
+  throw error;
+  }
+};
 
   /**
    * Sign out from all providers safely

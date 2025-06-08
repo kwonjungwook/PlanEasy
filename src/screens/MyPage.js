@@ -935,7 +935,7 @@ const MyPage = ({ navigation }) => {
                 <View style={styles.premiumTitleContainer}>
                   <Text style={styles.premiumTitle}>플랜이지 플러스</Text>
                   <View style={styles.crownBadge}>
-                    <Ionicons name="crown" size={14} color="#FFD700" />
+                  <Ionicons name="star" size={14} color="#FFD700" />
                   </View>
                 </View>
                 <Text style={styles.premiumSubtitle}>

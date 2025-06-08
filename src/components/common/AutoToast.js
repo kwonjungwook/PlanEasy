@@ -1,54 +1,56 @@
 // src/components/common/AutoToast.js
 
-import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, Animated, Dimensions } from 'react-native';
+import React, { useEffect, useRef, useState } from "react";
+import { Animated, StyleSheet, Text } from "react-native";
 
 // 전역으로 토스트 메시지를 관리하기 위한 이벤트 시스템
 export const ToastEventSystem = {
   listeners: [],
-  
+
   // 이벤트 리스너 등록
   subscribe(callback) {
     this.listeners.push(callback);
     return () => {
-      this.listeners = this.listeners.filter(listener => listener !== callback);
+      this.listeners = this.listeners.filter(
+        (listener) => listener !== callback
+      );
     };
   },
-  
+
   // 토스트 메시지 표시 이벤트 발생
   showToast(message, duration = 2000) {
-    this.listeners.forEach(listener => listener(message, duration));
-  }
+    if (__DEV__) {
+      console.log(`[ToastEventSystem] 토스트 표시: "${message}"`);
+    }
+    this.listeners.forEach((listener) => listener(message, duration));
+  },
 };
 
 // 토스트 컴포넌트
 const AutoToast = () => {
   const [toastVisible, setToastVisible] = useState(false);
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState("");
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const translateY = useRef(new Animated.Value(20)).current;
-  
+  const translateY = useRef(new Animated.Value(50)).current;
+
   useEffect(() => {
     // 이벤트 구독
     const unsubscribe = ToastEventSystem.subscribe((message, duration) => {
-      // 이미 토스트가 표시 중이면 먼저 사라지게 함
-      if (toastVisible) {
-        hideToast(() => {
-          showToastWithMessage(message, duration);
-        });
-      } else {
-        showToastWithMessage(message, duration);
-      }
+      showToastWithMessage(message, duration);
     });
-    
+
     return unsubscribe;
-  }, [toastVisible]);
-  
+  }, []);
+
   // 메시지와 함께 토스트 표시
   const showToastWithMessage = (msg, duration) => {
     setMessage(msg);
     setToastVisible(true);
-    
+
+    // 초기값 설정
+    fadeAnim.setValue(0);
+    translateY.setValue(50);
+
     // 페이드인 애니메이션
     Animated.parallel([
       Animated.timing(fadeAnim, {
@@ -62,17 +64,15 @@ const AutoToast = () => {
         useNativeDriver: true,
       }),
     ]).start();
-    
+
     // 자동으로 사라지는 타이머 설정
-    const timer = setTimeout(() => {
+    setTimeout(() => {
       hideToast();
     }, duration);
-    
-    return () => clearTimeout(timer);
   };
-  
+
   // 토스트 숨기기
-  const hideToast = (callback) => {
+  const hideToast = () => {
     // 페이드아웃 애니메이션
     Animated.parallel([
       Animated.timing(fadeAnim, {
@@ -81,26 +81,25 @@ const AutoToast = () => {
         useNativeDriver: true,
       }),
       Animated.timing(translateY, {
-        toValue: 20,
+        toValue: 50,
         duration: 300,
         useNativeDriver: true,
       }),
     ]).start(() => {
       setToastVisible(false);
-      if (callback) callback();
     });
   };
-  
+
   if (!toastVisible) return null;
-  
+
   return (
-    <Animated.View 
+    <Animated.View
       style={[
-        styles.container, 
-        { 
+        styles.container,
+        {
           opacity: fadeAnim,
-          transform: [{ translateY: translateY }]
-        }
+          transform: [{ translateY: translateY }],
+        },
       ]}
     >
       <Text style={styles.text}>{message}</Text>
@@ -108,35 +107,25 @@ const AutoToast = () => {
   );
 };
 
-const { width } = Dimensions.get('window');
-
 const styles = StyleSheet.create({
   container: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 100,
-    alignSelf: 'center',
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    left: "10%",
+    right: "10%",
+    backgroundColor: "rgba(0,0,0,0.8)",
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderRadius: 25,
-    width: width * 0.85,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
+    alignItems: "center",
+    justifyContent: "center",
     zIndex: 9999,
   },
   text: {
-    color: 'white',
-    fontSize: 14,
-    fontWeight: '500',
-    textAlign: 'center',
+    color: "white",
+    fontSize: 15,
+    fontWeight: "600",
+    textAlign: "center",
   },
 });
 

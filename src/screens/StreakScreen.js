@@ -1,21 +1,22 @@
 // src/screens/StreakScreen.js
-import React, { useRef, useEffect } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Animated,
-  SafeAreaView,
-  FlatList,
-  Easing,
-} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import React, { useEffect, useRef } from "react";
+import {
+  Animated,
+  Easing,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { useProgress } from "../context/ProgressContext";
 
 // src/screens/StreakScreen.js 시작 부분
 const StreakScreen = ({ navigation }) => {
+  // 토스트는 ProgressContext에서 전역적으로 처리
+
   // 기본값을 제공하여 undefined 방지
   const {
     streak = 0,
@@ -179,7 +180,13 @@ const StreakScreen = ({ navigation }) => {
   // 출석 체크 처리
   const handleAttendanceCheck = async () => {
     if (!checkedToday) {
-      await checkAttendance();
+      try {
+        await checkAttendance();
+        // 토스트는 ProgressContext에서 자동으로 표시됨
+      } catch (error) {
+        console.error("출석 체크 실패:", error);
+        // 에러 토스트도 ProgressContext에서 처리됨
+      }
     }
   };
 

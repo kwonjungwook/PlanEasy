@@ -4,13 +4,15 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const { RNKakaoLogins } = NativeModules;
 
-console.log("모든 네이티브 모듈:", Object.keys(NativeModules));
-console.log("카카오 모듈:", RNKakaoLogins);
+if (__DEV__) {
+  console.log("모든 네이티브 모듈:", Object.keys(NativeModules));
+  console.log("카카오 모듈:", RNKakaoLogins);
 
-// 네이티브 모듈 상태 확인
-console.log("카카오 네이티브 모듈 상태:", RNKakaoLogins ? "있음" : "없음");
-if (RNKakaoLogins) {
-  console.log("카카오 사용 가능한 메서드:", Object.keys(RNKakaoLogins).join(", "));
+  // 네이티브 모듈 상태 확인
+  console.log("카카오 네이티브 모듈 상태:", RNKakaoLogins ? "있음" : "없음");
+  if (RNKakaoLogins) {
+    console.log("카카오 사용 가능한 메서드:", Object.keys(RNKakaoLogins).join(", "));
+  }
 }
 
 // 토큰 관리를 위한 스토리지 키
@@ -18,14 +20,28 @@ const KAKAO_TOKEN_KEY = "@kakao_token";
 
 // 카카오 서비스 객체
 const KakaoLoginService = {
-  // 로그인
-  login: async () => {
+  // 초기화 (필요한 경우)
+  initialize: async () => {
     try {
       if (!RNKakaoLogins) {
         throw new Error("카카오 로그인 모듈을 찾을 수 없습니다");
       }
+      console.log("[KakaoLoginService] 초기화 완료");
+      return true;
+    } catch (error) {
+      console.error("[KakaoLoginService] 초기화 오류:", error);
+      return false;
+    }
+  },
 
-      console.log("[KakaoLoginService] 로그인 시작");
+  // 로그인
+  login: async () => {
+    try {
+      if (!RNKakaoLogins) {
+        throw new Error("카카오 로그인 모듈을 찾을 수 없습니다. 네이티브 빌드가 필요할 수 있습니다.");
+      }
+
+      console.log("[KakaoLoginService] 네이티브 로그인 시작");
 
       // 이미 로그인되어 있는 상태라면 먼저 로그아웃
       try {
@@ -99,7 +115,9 @@ const KakaoLoginService = {
   logout: async () => {
     try {
       if (!RNKakaoLogins) {
-        throw new Error("카카오 로그인 모듈을 찾을 수 없습니다");
+        console.log("[KakaoLoginService] 네이티브 모듈 없음, 로컬 정리만 수행");
+        await AsyncStorage.removeItem(KAKAO_TOKEN_KEY);
+        return true;
       }
 
       console.log("[KakaoLoginService] 로그아웃 시작");
@@ -132,7 +150,9 @@ const KakaoLoginService = {
   unlink: async () => {
     try {
       if (!RNKakaoLogins) {
-        throw new Error("카카오 로그인 모듈을 찾을 수 없습니다");
+        console.log("[KakaoLoginService] 네이티브 모듈 없음, 로컬 정리만 수행");
+        await AsyncStorage.removeItem(KAKAO_TOKEN_KEY);
+        return true;
       }
 
       console.log("[KakaoLoginService] 연결 해제 시작");
@@ -175,6 +195,13 @@ const KakaoLoginService = {
   getAccessToken: async () => {
     try {
       if (!RNKakaoLogins) {
+        // 네이티브 모듈이 없으면 로컬 스토리지에서만 확인
+        const tokenData = await AsyncStorage.getItem(KAKAO_TOKEN_KEY);
+        if (tokenData) {
+          const parsedToken = JSON.parse(tokenData);
+          console.log("[KakaoLoginService] 로컬 토큰 확인:", !!parsedToken.accessToken);
+          return parsedToken.accessToken;
+        }
         return null;
       }
 
@@ -198,6 +225,11 @@ const KakaoLoginService = {
       console.error("[KakaoLoginService] 토큰 확인 오류:", error);
       return null;
     }
+  },
+
+  // 네이티브 모듈 상태 확인
+  isNativeModuleAvailable: () => {
+    return !!RNKakaoLogins;
   },
 };
 

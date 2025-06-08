@@ -11,6 +11,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Alert, Platform } from "react-native";
 import { useGoogleAuth } from "../services/AuthService";
 import NaverLoginService from "../services/NaverLoginService";
+import KakaoLoginService from "../services/KakaoLoginService";
 
 // 중요 상수 정의
 const USER_AUTH_KEY = "@user_auth_data";
@@ -246,20 +247,83 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-// 카카오 로그인 처리 (WebView 방식으로 임시 변경)
+  // 카카오 로그인 처리 (네이티브 방식)
   const loginWithKakao = async () => {
     try {
       setLoading(true);
       setError(null);
 
-      console.log("AuthContext: WebView 방식 카카오 로그인 시작");
+      console.log("AuthContext: 네이티브 방식 카카오 로그인 시작");
 
-      // WebView 모달을 열어서 로그인 처리
-      // 이 부분은 LoginScreen에서 처리되므로 여기서는 단순히 성공 반환
+      // KakaoLoginService 사용
+      const result = await KakaoLoginService.login();
+      console.log("카카오 로그인 결과:", !!result);
+
+      if (!result || !result.accessToken) {
+        console.log("카카오 로그인 실패 또는 취소");
+        return false;
+      }
+
+      // 프로필 정보 요청
+      let profileInfo = null;
+      try {
+        profileInfo = await KakaoLoginService.getProfile();
+        console.log("카카오 프로필 정보 획득 성공");
+      } catch (profileError) {
+        console.warn("카카오 프로필 정보 획득 실패:", profileError.message);
+      }
+
+      // 사용자 데이터 생성
+      let userData;
+      if (profileInfo) {
+        userData = {
+          uid: `kakao-${profileInfo.id || Date.now()}`,
+          email: profileInfo.email || "",
+          displayName: profileInfo.nickname || "카카오 사용자",
+          photoURL: profileInfo.profileImageUrl || null,
+          authProvider: "kakao",
+          accessToken: result.accessToken,
+        };
+      } else {
+        // 프로필 정보 없을 때 기본 데이터
+        userData = {
+          uid: `kakao-${Date.now()}`,
+          email: "",
+          displayName: "카카오 사용자",
+          photoURL: null,
+          authProvider: "kakao",
+          accessToken: result.accessToken,
+        };
+      }
+
+      console.log("카카오 사용자 데이터 생성 완료");
+
+      // 사용자 데이터 저장
+      try {
+        await AsyncStorage.setItem(USER_AUTH_KEY, JSON.stringify(userData));
+        console.log("카카오 사용자 데이터가 AsyncStorage에 저장됨");
+      } catch (storageError) {
+        console.warn("AsyncStorage에 카카오 사용자 저장 실패:", storageError);
+      }
+
+      // 상태 업데이트
+      setUser(userData);
       return true;
     } catch (error) {
       console.error("카카오 로그인 오류:", error);
-      setError("카카오 로그인 중 오류가 발생했습니다: " + error.message);
+      
+      // 사용자 취소 확인
+      if (
+        error.toString().includes("user cancelled") ||
+        error.message?.includes("user cancelled") ||
+        error.toString().includes("OPERATION_CANCELED") ||
+        error.message?.includes("OPERATION_CANCELED")
+      ) {
+        console.log("사용자가 카카오 로그인을 취소했습니다.");
+        return null; // 취소는 null 반환
+      }
+
+      setError(error.message || "카카오 로그인 중 오류가 발생했습니다");
       return false;
     } finally {
       setLoading(false);
