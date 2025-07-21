@@ -1,31 +1,38 @@
 // src/screens/CalendarScreen.js
-import React, { useState, useEffect, useRef } from "react";
 import {
-  View,
+  useFocusEffect,
+  useNavigation,
+  useRoute,
+} from "@react-navigation/native";
+import { format } from "date-fns";
+import { StatusBar } from "expo-status-bar";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  Alert,
+  Animated,
+  BackHandler,
+  Dimensions,
+  FlatList,
+  Modal,
+  PanResponder,
+  Platform,
+  StatusBar as RNStatusBar,
+  SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
-  Modal,
-  Alert,
-  ScrollView,
-  Platform,
-  Dimensions,
-  Animated,
-  PanResponder,
-  FlatList,
-  BackHandler,
+  View,
 } from "react-native";
 import { Calendar } from "react-native-calendars";
-import { usePlanner } from "../context/PlannerContext";
-import {
-  useNavigation,
-  useRoute,
-  useFocusEffect,
-} from "@react-navigation/native";
-import { format } from "date-fns";
 import { getHolidayName } from "../components/holidays";
-import HeaderBar from "../components/layout/HeaderBar";
-
+import { usePlanner } from "../context/PlannerContext";
 const THEME_COLORS = {
   primary: "#50cebb", // 기존 코랄색
   secondary: "#4a73e2", // 세컨더리 색상
@@ -115,6 +122,80 @@ export default function CalendarScreen() {
     transitioning: false,
     content: null,
   });
+  const daySchedules = useMemo(() => {
+    const items = schedules[currentDate] ?? [];
+    return [...items].sort((a, b) => {
+      const aMin = a.startTime.split(":").reduce((h, m) => h * 60 + +m);
+      const bMin = b.startTime.split(":").reduce((h, m) => h * 60 + +m);
+      return aMin - bMin;
+    });
+  }, [schedules, currentDate]);
+
+  // 📌 달력 표시에 필요한 데이터는 변할 때만 다시 계산
+  const marked = useMemo(
+    () => getMarkedDates(),
+    [schedules, currentDate, selectedDates, isSelecting]
+  );
+
+  // 📌 셀 렌더러를 한 번 만들어 재사용
+  const renderDay = useCallback(
+    ({ date, state, marking }) => {
+      if (state === "disabled") return <View />;
+
+      const dayDate = new Date(date.timestamp);
+      const dow = dayDate.getDay();
+      const holiday = getHolidayName(date.dateString);
+
+      const textStyle = [
+        styles.dayText,
+        (dow === 0 || holiday) && { color: "#f44336" },
+        dow === 6 && { color: "#9C27B0" },
+        marking?.selected && { color: "white" },
+      ];
+
+      return (
+        <TouchableOpacity
+          onPress={() => handleDayPress({ dateString: date.dateString })}
+          style={[
+            styles.dayContainer,
+            marking?.selected && {
+              backgroundColor: THEME_COLORS.primary,
+              borderRadius: 16,
+            },
+          ]}
+        >
+          <Text style={textStyle}>{date.day}</Text>
+
+          {holiday && (
+            <Text
+              style={[
+                styles.holidayText,
+                { color: marking?.selected ? "white" : "#f44336" },
+              ]}
+              numberOfLines={1}
+            >
+              {holiday}
+            </Text>
+          )}
+
+          {marking?.marked && (
+            <View
+              style={{
+                width: 4,
+                height: 4,
+                borderRadius: 2,
+                backgroundColor: marking.selected
+                  ? "white"
+                  : THEME_COLORS.primary,
+                marginTop: 1,
+              }}
+            />
+          )}
+        </TouchableOpacity>
+      );
+    },
+    [isSelecting, selectedDates]
+  );
 
   const modalFadeAnim = useRef(new Animated.Value(0)).current;
   const modalTranslateY = useRef(new Animated.Value(20)).current;
@@ -233,7 +314,14 @@ export default function CalendarScreen() {
         content,
       });
 
-      startModalAnimation();
+      // 즐시 완전히 불투명하게 설정 후 애니메이션 시작
+      modalFadeAnim.setValue(0);
+      modalTranslateY.setValue(20);
+      
+      // 짧은 지연 후 애니메이션 시작
+      setTimeout(() => {
+        startModalAnimation();
+      }, 50);
     }
   };
 
@@ -267,21 +355,25 @@ export default function CalendarScreen() {
   };
 
   const startModalAnimation = () => {
+    // 초기값 다시 확인
     modalFadeAnim.setValue(0);
     modalTranslateY.setValue(20);
 
+    // 애니메이션 실행
     Animated.parallel([
       Animated.timing(modalFadeAnim, {
         toValue: 1,
-        duration: 250,
+        duration: 300, // 조금 더 긴 시간
         useNativeDriver: true,
       }),
       Animated.timing(modalTranslateY, {
         toValue: 0,
-        duration: 300,
+        duration: 350,
         useNativeDriver: true,
       }),
-    ]).start();
+    ]).start(() => {
+      // 애니메이션 완료
+    });
   };
 
   // ===== 4. 일정 확장/축소 함수 =====
@@ -478,7 +570,7 @@ export default function CalendarScreen() {
 
   // ===== 7. 유틸리티 함수 =====
 
-  const getMarkedDates = () => {
+  function getMarkedDates() {
     const markedDates = {};
 
     Object.entries(schedules).forEach(([date, daySchedules]) => {
@@ -508,7 +600,7 @@ export default function CalendarScreen() {
     }
 
     return markedDates;
-  };
+  }
 
   // ===== 8. 일정 적용 함수 =====
 
@@ -629,15 +721,6 @@ export default function CalendarScreen() {
 
   const renderSchedules = () => {
     if (!currentDate || !showSchedules) return null;
-
-    // 일정 데이터 정렬
-    const daySchedules = schedules[currentDate]
-      ? [...schedules[currentDate]].sort((a, b) => {
-          const timeA = a.startTime.split(":").map(Number);
-          const timeB = b.startTime.split(":").map(Number);
-          return timeA[0] * 60 + timeA[1] - (timeB[0] * 60 + timeB[1]);
-        })
-      : [];
 
     return (
       <>
@@ -1030,220 +1113,187 @@ export default function CalendarScreen() {
   // ===== 10. 메인 렌더링 =====
 
   return (
-    <View style={styles.container}>
-      {/* 상단 헤더 영역 */}
-      <View style={styles.header}>
-        {/* 좌측에 헤더 제목 */}
-        <Text style={styles.headerTitle}>캘린더</Text>
+    <View style={{ flex: 1, backgroundColor: "#ffffff" }}>
+      <StatusBar style="dark" backgroundColor="#ffffff" translucent={false} />
 
-        {/* 우측에 컨트롤 버튼들 */}
-        <View style={styles.headerControls}>
-          <TouchableOpacity
-            style={[styles.modeButton, isSelecting && styles.modeButtonActive]}
-            onPress={toggleSelectionMode}
-          >
-            <Text style={styles.modeButtonIcon}>
-              {isSelecting ? "✕" : "🔍"}
-            </Text>
-            <Text
-              style={[
-                styles.modeButtonText,
-                isSelecting && styles.modeButtonTextActive,
-              ]}
-            >
-              {isSelecting ? "선택 취소" : "다중 선택"}
-            </Text>
-          </TouchableOpacity>
+      <SafeAreaView
+        style={[
+          styles.container,
+          {
+            paddingTop:
+              Platform.OS === "android" ? RNStatusBar.currentHeight || 35 : 0,
+          },
+        ]}
+      >
+        <View style={styles.container}>
+          {/* 상단 헤더 영역 */}
+          <View style={styles.header}>
+            {/* 좌측에 헤더 제목 */}
+            <Text style={styles.headerTitle}>캘린더</Text>
 
-          {/* 선택 모드일 때 표시할 인라인 액션 버튼들 */}
-          {isSelecting && Object.keys(selectedDates).length > 0 && (
-            <View style={styles.inlineActionButtons}>
-              {Object.keys(selectedDates).some(
-                (date) => (schedules[date]?.length || 0) > 0
-              ) && (
-                <TouchableOpacity
-                  style={[styles.actionButton, styles.deleteActionButton]}
-                  onPress={() => {
-                    Alert.alert(
-                      "일정 삭제",
-                      `선택한 날짜의 모든 일정을 삭제하시겠습니까?`,
-                      [
-                        { text: "취소", style: "cancel" },
-                        {
-                          text: "삭제",
-                          style: "destructive",
-                          onPress: async () => {
-                            try {
-                              const newSchedules = { ...schedules };
-                              Object.keys(selectedDates).forEach((date) => {
-                                if (schedules[date]?.length > 0) {
-                                  delete newSchedules[date];
-                                }
-                              });
-                              await updateSchedule("all", newSchedules);
-                              setSelectedDates({});
-                              setIsSelecting(false);
-                              Alert.alert(
-                                "완료",
-                                "선택한 날짜의 일정이 삭제되었습니다."
-                              );
-                            } catch (error) {
-                              console.error("Error deleting schedules:", error);
-                              Alert.alert(
-                                "오류",
-                                "일정 삭제 중 오류가 발생했습니다."
-                              );
-                            }
-                          },
-                        },
-                      ]
-                    );
-                  }}
-                >
-                  <Text style={styles.actionButtonIcon}>🗑️</Text>
-                  <Text style={styles.actionButtonText}>삭제</Text>
-                </TouchableOpacity>
-              )}
-
+            {/* 우측에 컨트롤 버튼들 */}
+            <View style={styles.headerControls}>
               <TouchableOpacity
-                style={[styles.actionButton, styles.applyActionButton]}
-                onPress={() => showModal("main")}
+                style={[
+                  styles.modeButton,
+                  isSelecting && styles.modeButtonActive,
+                ]}
+                onPress={toggleSelectionMode}
               >
-                <Text style={styles.actionButtonIcon}>📅</Text>
-                <Text style={styles.actionButtonText}>
-                  적용 ({Object.keys(selectedDates).length})
+                <Text style={styles.modeButtonIcon}>
+                  {isSelecting ? "✕" : "🔍"}
                 </Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
-      </View>
-
-      {/* 새로운 flex 레이아웃 사용 */}
-      <View style={{ flex: 1 }}>
-        {/* 달력 영역 - 애니메이션 처리된 flex 값 사용 */}
-        <Animated.View
-          ref={calendarContainerRef}
-          style={[styles.calendarContainer, { flex: calendarFlexValue }]}
-        >
-          <Calendar
-            style={styles.calendar}
-            theme={THEME}
-            firstDay={1}
-            hideExtraDays={true}
-            markedDates={getMarkedDates()}
-            onDayPress={handleDayPress}
-            enableSwipeMonths={true}
-            monthFormat={"yyyy년 MM월"}
-            onMonthChange={(month) => {
-              console.log("달력 월 변경:", month.dateString);
-            }}
-            dayComponent={({ date, state, marking }) => {
-              if (state === "disabled") return <View />;
-
-              const dayDate = new Date(date.timestamp);
-              const dayOfWeek = dayDate.getDay();
-              const holidayName = getHolidayName(date.dateString);
-
-              const textStyle = [
-                styles.dayText,
-                (dayOfWeek === 0 || holidayName) && { color: "#f44336" },
-                dayOfWeek === 6 && { color: "#9C27B0" },
-                marking?.selected && { color: "white" },
-              ];
-
-              return (
-                <TouchableOpacity
-                  onPress={() =>
-                    handleDayPress({ dateString: date.dateString })
-                  }
+                <Text
                   style={[
-                    styles.dayContainer,
-                    marking?.selected && {
-                      backgroundColor: THEME_COLORS.primary,
-                      borderRadius: 16,
-                    },
+                    styles.modeButtonText,
+                    isSelecting && styles.modeButtonTextActive,
                   ]}
                 >
-                  <Text style={textStyle}>{date.day}</Text>
-                  {holidayName && (
-                    <Text
-                      style={[
-                        styles.holidayText,
-                        { color: marking?.selected ? "white" : "#f44336" },
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {holidayName}
-                    </Text>
-                  )}
-                  {marking?.marked && (
-                    <View
-                      style={{
-                        width: 4,
-                        height: 4,
-                        borderRadius: 2,
-                        backgroundColor: marking.selected
-                          ? "white"
-                          : THEME_COLORS.primary,
-                        marginTop: 1,
+                  {isSelecting ? "선택 취소" : "다중 선택"}
+                </Text>
+              </TouchableOpacity>
+
+              {/* 선택 모드일 때 표시할 인라인 액션 버튼들 */}
+              {isSelecting && Object.keys(selectedDates).length > 0 && (
+                <View style={styles.inlineActionButtons}>
+                  {Object.keys(selectedDates).some(
+                    (date) => (schedules[date]?.length || 0) > 0
+                  ) && (
+                    <TouchableOpacity
+                      style={[styles.actionButton, styles.deleteActionButton]}
+                      onPress={() => {
+                        Alert.alert(
+                          "일정 삭제",
+                          `선택한 날짜의 모든 일정을 삭제하시겠습니까?`,
+                          [
+                            { text: "취소", style: "cancel" },
+                            {
+                              text: "삭제",
+                              style: "destructive",
+                              onPress: async () => {
+                                try {
+                                  const newSchedules = { ...schedules };
+                                  Object.keys(selectedDates).forEach((date) => {
+                                    if (schedules[date]?.length > 0) {
+                                      delete newSchedules[date];
+                                    }
+                                  });
+                                  await updateSchedule("all", newSchedules);
+                                  setSelectedDates({});
+                                  setIsSelecting(false);
+                                  Alert.alert(
+                                    "완료",
+                                    "선택한 날짜의 일정이 삭제되었습니다."
+                                  );
+                                } catch (error) {
+                                  console.error(
+                                    "Error deleting schedules:",
+                                    error
+                                  );
+                                  Alert.alert(
+                                    "오류",
+                                    "일정 삭제 중 오류가 발생했습니다."
+                                  );
+                                }
+                              },
+                            },
+                          ]
+                        );
                       }}
-                    />
+                    >
+                      <Text style={styles.actionButtonIcon}>🗑️</Text>
+                      <Text style={styles.actionButtonText}>삭제</Text>
+                    </TouchableOpacity>
                   )}
-                </TouchableOpacity>
-              );
-            }}
-          />
-        </Animated.View>
 
-        {/* 일정 영역 - 애니메이션 처리된 flex 값 사용 */}
-        <Animated.View
-          style={[
-            styles.scheduleContainer,
-            {
-              flex: scheduleFlexValue,
-              backgroundColor: backgroundColor,
-              borderTopLeftRadius: 16,
-              borderTopRightRadius: 16,
-            },
-          ]}
-        >
-          {showSchedules && renderSchedules()}
-        </Animated.View>
-      </View>
+                  <TouchableOpacity
+                    style={[styles.actionButton, styles.applyActionButton]}
+                    onPress={() => showModal("main")}
+                  >
+                    <Text style={styles.actionButtonIcon}>📅</Text>
+                    <Text style={styles.actionButtonText}>
+                      적용 ({Object.keys(selectedDates).length})
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          </View>
 
-      {/* 모달 */}
-      {modalState.visible && (
-        <Modal
-          visible={true}
-          transparent={true}
-          animationType="none"
-          onRequestClose={() => {
-            if (!modalState.transitioning) {
-              if (modalState.type === "main") {
-                hideModal();
-              } else {
-                showModal("main");
-              }
-            }
-          }}
-        >
-          <View style={styles.modalOverlay}>
+          {/* 새로운 flex 레이아웃 사용 */}
+          <View style={{ flex: 1 }}>
+            {/* 달력 영역 - 애니메이션 처리된 flex 값 사용 */}
+            <Animated.View
+              ref={calendarContainerRef}
+              style={[styles.calendarContainer, { flex: calendarFlexValue }]}
+            >
+              <Calendar
+                style={styles.calendar}
+                theme={THEME}
+                firstDay={1}
+                hideExtraDays={true}
+                markedDates={marked}
+                onDayPress={handleDayPress}
+                enableSwipeMonths={true}
+                monthFormat={"yyyy년 MM월"}
+                onMonthChange={(month) => {
+                  console.log("달력 월 변경:", month.dateString);
+                }}
+                dayComponent={renderDay}
+              />
+            </Animated.View>
+
+            {/* 일정 영역 - 애니메이션 처리된 flex 값 사용 */}
             <Animated.View
               style={[
-                styles.modalContent,
-                styles.enhancedModalContent,
+                styles.scheduleContainer,
                 {
-                  opacity: modalFadeAnim,
-                  transform: [{ translateY: modalTranslateY }],
+                  flex: scheduleFlexValue,
+                  backgroundColor: backgroundColor,
+                  borderTopLeftRadius: 16,
+                  borderTopRightRadius: 16,
                 },
               ]}
             >
-              {renderModalContent()}
+              {showSchedules && renderSchedules()}
             </Animated.View>
           </View>
-        </Modal>
-      )}
+
+          {/* 모달 */}
+          {modalState.visible && (
+            <Modal
+              visible={true}
+              transparent={true}
+              animationType="none"
+              onRequestClose={() => {
+                if (!modalState.transitioning) {
+                  if (modalState.type === "main") {
+                    hideModal();
+                  } else {
+                    showModal("main");
+                  }
+                }
+              }}
+            >
+              <View style={styles.modalOverlay}>
+                <View style={styles.modalContainer}>
+                  <Animated.View
+                    style={[
+                      styles.modalContent,
+                      {
+                        opacity: modalFadeAnim,
+                        transform: [{ translateY: modalTranslateY }],
+                      },
+                    ]}
+                  >
+                    {renderModalContent()}
+                  </Animated.View>
+                </View>
+              </View>
+            </Modal>
+          )}
+        </View>
+      </SafeAreaView>
     </View>
   );
 }
@@ -1261,21 +1311,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 16,
     paddingHorizontal: 18,
-    borderBottomWidth: 1,
-    borderBottomColor: "#e9ecef",
     backgroundColor: "#ffffff",
-    ...Platform.select({
-      ios: {
-        shadowColor: THEME_COLORS.shadow,
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 3,
-      },
-    }),
-    zIndex: 10,
+    // border 관련 속성 모두 제거
   },
   headerTitle: {
     fontSize: 20,
@@ -1618,18 +1655,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 20,
   },
-  modalContent: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    padding: 24,
+  modalContainer: {
     width: "100%",
     maxWidth: 400,
-    alignItems: "stretch",
+    backgroundColor: "#FFFFFF", // 컴테이너 배경색 보장
+    borderRadius: 24,
+    // 그림자 효과
     ...Platform.select({
       ios: {
-        shadowColor: THEME_COLORS.shadow,
+        shadowColor: "#000000",
         shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.3,
+        shadowOpacity: 0.25,
         shadowRadius: 12,
       },
       android: {
@@ -1637,12 +1673,11 @@ const styles = StyleSheet.create({
       },
     }),
   },
-  enhancedModalContent: {
+  modalContent: {
     backgroundColor: "#FFFFFF",
     borderRadius: 24,
     padding: 24,
     width: "100%",
-    maxWidth: 400,
     alignItems: "stretch",
   },
   modalHeader: {

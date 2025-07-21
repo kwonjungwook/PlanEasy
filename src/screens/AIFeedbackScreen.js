@@ -1,1606 +1,2298 @@
 // src/screens/AIFeedbackScreen.js
-import React, {
-  useState,
-  useEffect,
-  useRef,
-  useMemo,
-  useCallback,
-} from "react";
-import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  ActivityIndicator,
-  SafeAreaView,
-  Alert,
-  StyleSheet,
-} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { usePlanner } from "../context/PlannerContext";
-import { format, sub, addDays } from "date-fns";
-import { ko } from "date-fns/locale";
-import { useNavigation } from "@react-navigation/native";
-import HeaderBar from "../components/layout/HeaderBar";
-import { useSubscription } from "../context/SubscriptionContext";
-import { useProgress } from "../context/ProgressContext";
-import { ToastEventSystem } from "../components/common/AutoToast";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import EnhancedFeedbackService from "../services/ImprovedFeedbackService";
-
-// Chart components
+import { format } from "date-fns";
+import { StatusBar } from "expo-status-bar";
+import { useEffect, useRef, useState } from "react";
 import {
-  DailyStudyChart,
-  WeeklyStudyChart,
-  MonthlySubjectChart,
-} from "../components/reports/SimpleCharts";
-
-// Import styles
+  Alert,
+  Animated,
+  AppState,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { usePlanner } from "../context/PlannerContext";
 import {
-  THEME_COLORS,
-  getColor,
-  badgeStyles,
-  styles,
-  additionalStyles,
-} from "../styles/AIFeedbackScreenStyles";
+  getRecentAnalysisResults,
+  getUserContext,
+  getYesterdayAnalysisResult,
+  saveAnalysisResult,
+  saveUserContext,
+  testDeepSeekAPI,
+} from "../services/ImprovedFeedbackService";
 
-// 리포트 타입 상수
-const REPORT_TYPES = EnhancedFeedbackService.REPORT_TYPES;
-
-// 스토리지 키 상수
-const STORAGE_KEYS = {
-  LAST_VIEWED_WEEKLY: "@last_viewed_weekly_report",
-  LAST_VIEWED_MONTHLY: "@last_viewed_monthly_report",
-  NOTIFICATIONS_SETUP: "report_notifications_setup",
-};
-
-// 자동 갱신 주기 (밀리초)
-const AUTO_REFRESH_INTERVALS = EnhancedFeedbackService.AUTO_REFRESH_INTERVALS;
-
-/**
- * 접을 수 있는 카드 컴포넌트
- */
-const CollapsibleCard = ({
-  title,
-  children,
-  icon,
-  borderColor,
-  initiallyExpanded = false,
-}) => {
-  const [isCollapsed, setIsCollapsed] = useState(!initiallyExpanded);
-
-  return (
-    <View style={styles.sectionCard}>
-      <TouchableOpacity
-        style={[
-          styles.sectionHeader,
-          !isCollapsed && styles.sectionHeaderBorder,
-          borderColor && { borderLeftColor: borderColor, borderLeftWidth: 3 },
-        ]}
-        onPress={() => setIsCollapsed(!isCollapsed)}
-      >
-        {icon && (
-          <Ionicons
-            name={icon}
-            size={20}
-            color="#666"
-            style={styles.sectionIcon}
-          />
-        )}
-        <Text style={styles.sectionTitle}>{title}</Text>
-        <Ionicons
-          name={isCollapsed ? "chevron-down" : "chevron-up"}
-          size={20}
-          color="#666"
-        />
-      </TouchableOpacity>
-      {!isCollapsed && <View style={styles.sectionContent}>{children}</View>}
-    </View>
-  );
-};
-
-/**
- * 목표 및 D-Day 섹션 컴포넌트
- */
-const GoalSection = ({ goalTargets }) => {
-  // 목표 데이터 처리
-  const processedGoals = useMemo(() => {
-    return EnhancedFeedbackService.processGoalsForReport(goalTargets);
-  }, [goalTargets]);
-
-  const hasGoals = processedGoals && processedGoals.length > 0;
-
-  return (
-    <CollapsibleCard
-      title="D-Day 현황"
-      icon="flag-outline"
-      initiallyExpanded={true}
-    >
-      {hasGoals ? (
-        processedGoals.map((goal, index) => {
-          let badgeStyle;
-
-          if (goal.daysLeft === 0) {
-            badgeStyle = styles.dDayToday;
-          } else if (goal.daysLeft <= 7) {
-            badgeStyle = styles.dDayNear;
-          } else {
-            badgeStyle = styles.dDayFar;
-          }
-
-          return (
-            <View key={goal.id || index} style={styles.goalDetailCard}>
-              <View style={styles.goalDetailHeader}>
-                <Text style={styles.goalDetailTitle}>{goal.title}</Text>
-                <View style={[styles.dDayBadgeSmall, badgeStyle]}>
-                  <Text style={styles.dDayBadgeText}>{goal.dDayText}</Text>
-                </View>
-              </View>
-              <Text style={styles.goalDetailMessage}>{goal.message}</Text>
-            </View>
-          );
-        })
-      ) : (
-        <View style={{ padding: 16, alignItems: "center" }}>
-          <Text style={{ color: "#666", fontStyle: "italic" }}>
-            예정된 D-Day 일정이 없습니다.
-          </Text>
-          <Text
-            style={{
-              color: "#888",
-              fontSize: 12,
-              marginTop: 8,
-              textAlign: "center",
-            }}
-          >
-            목표나 중요 일정을 등록하면 여기에 표시됩니다.
-          </Text>
-        </View>
-      )}
-    </CollapsibleCard>
-  );
-};
-
-/**
- * 오늘의 일정 및 공부 컴포넌트
- */
-const TodayScheduleAndStudy = ({ studySessions, schedules, selectedDate }) => {
-  // 오늘의 일정 가져오기
-  const todaySchedules = useMemo(() => {
-    return schedules[selectedDate] || [];
-  }, [schedules, selectedDate]);
-
-  // 오늘의 공부 세션 가져오기
-  const todayStudySessions = useMemo(() => {
-    return studySessions[selectedDate] || [];
-  }, [studySessions, selectedDate]);
-
-  // 데이터 없음 체크
-  const hasNoData =
-    todaySchedules.length === 0 && todayStudySessions.length === 0;
-
-  // 총 공부 시간 계산
-  const totalStudyTime = useMemo(() => {
-    return todayStudySessions.reduce(
-      (total, session) => total + session.duration,
-      0
-    );
-  }, [todayStudySessions]);
-
-  // 시간 포맷 함수
-  const formatLongTime = (seconds) => {
-    const hours = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-    return `${hours.toString().padStart(2, "0")}:${mins
-      .toString()
-      .padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
-  };
-
-  // 과목별 공부 시간 그룹화
-  const subjectTimes = useMemo(() => {
-    const result = {};
-    todayStudySessions.forEach((session) => {
-      const subject = session.subject || "공부시간";
-      if (!result[subject]) {
-        result[subject] = 0;
-      }
-      result[subject] += session.duration;
-    });
-    return result;
-  }, [todayStudySessions]);
-
-  // 시간별 일정 그룹화
-  const schedulesByTime = useMemo(() => {
-    const result = {};
-
-    // 일정 그룹화
-    todaySchedules.forEach((schedule) => {
-      const hour = schedule.startTime?.split(":")[0] || "00";
-      const timeSlot = `${hour}시`;
-
-      if (!result[timeSlot]) {
-        result[timeSlot] = { schedules: [], studySessions: [] };
-      }
-
-      result[timeSlot].schedules.push(schedule);
-    });
-
-    // 공부 세션 시간별 그룹화
-    todayStudySessions.forEach((session) => {
-      if (session.timestamp) {
-        const date = new Date(session.timestamp);
-        const hour = date.getHours();
-        const timeSlot = `${hour}시`;
-
-        if (!result[timeSlot]) {
-          result[timeSlot] = { schedules: [], studySessions: [] };
-        }
-
-        result[timeSlot].studySessions.push(session);
-      }
-    });
-
-    return result;
-  }, [todaySchedules, todayStudySessions]);
-
-  // 데이터 없음 상태 표시
-  if (hasNoData) {
-    return (
-      <View style={{ padding: 16, alignItems: "center" }}>
-        <Text style={{ color: "#666", fontStyle: "italic" }}>
-          오늘의 일정과 공부 기록이 없습니다.
-        </Text>
-      </View>
-    );
-  }
-
-  return (
-    <View style={{ padding: 8 }}>
-      {/* 총 공부 시간 */}
-      {totalStudyTime > 0 && (
-        <View
-          style={{
-            flexDirection: "row",
-            justifyContent: "space-between",
-            padding: 8,
-            backgroundColor: "#f5f5f5",
-            borderRadius: 8,
-            marginBottom: 16,
-          }}
-        >
-          <Text style={{ fontWeight: "bold", color: "#333" }}>
-            오늘 총 공부시간:
-          </Text>
-          <Text style={{ fontWeight: "bold", color: "#50cebb" }}>
-            {formatLongTime(totalStudyTime)}
-          </Text>
-        </View>
-      )}
-
-      {/* 과목별 공부 시간 */}
-      {Object.keys(subjectTimes).length > 0 && (
-        <View style={{ marginBottom: 16 }}>
-          <Text style={{ fontWeight: "bold", marginBottom: 8, color: "#333" }}>
-            과목별 공부시간:
-          </Text>
-          {Object.entries(subjectTimes).map(([subject, duration], index) => (
-            <View
-              key={index}
-              style={{
-                flexDirection: "row",
-                justifyContent: "space-between",
-                paddingVertical: 4,
-              }}
-            >
-              <Text style={{ color: "#555" }}>{subject}</Text>
-              <Text style={{ color: "#50cebb" }}>
-                {formatLongTime(duration)}
-              </Text>
-            </View>
-          ))}
-        </View>
-      )}
-
-      {/* 시간대별 활동 */}
-      <Text
-        style={{
-          fontWeight: "bold",
-          marginBottom: 8,
-          marginTop: 8,
-          color: "#333",
-        }}
-      >
-        시간대별 활동:
-      </Text>
-      {Object.entries(schedulesByTime)
-        .sort(([a], [b]) => a.localeCompare(b)) // 시간순 정렬
-        .map(([timeSlot, data], index) => (
-          <View
-            key={index}
-            style={{
-              marginBottom: 12,
-              borderLeftWidth: 3,
-              borderLeftColor: "#50cebb",
-              paddingLeft: 8,
-            }}
-          >
-            <Text
-              style={{ fontWeight: "bold", color: "#333", marginBottom: 4 }}
-            >
-              {timeSlot}
-            </Text>
-
-            {/* 해당 시간대 일정 */}
-            {data.schedules.map((schedule, idx) => (
-              <View
-                key={`schedule-${idx}`}
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  marginBottom: 4,
-                }}
-              >
-                <Ionicons
-                  name="calendar-outline"
-                  size={14}
-                  color="#666"
-                  style={{ marginRight: 4 }}
-                />
-                <Text style={{ color: "#555" }}>
-                  {schedule.startTime} - {schedule.endTime} {schedule.task}
-                </Text>
-              </View>
-            ))}
-
-            {/* 해당 시간대 공부 세션 */}
-            {data.studySessions.map((session, idx) => (
-              <View
-                key={`study-${idx}`}
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  marginBottom: 4,
-                }}
-              >
-                <Ionicons
-                  name="book-outline"
-                  size={14}
-                  color="#50cebb"
-                  style={{ marginRight: 4 }}
-                />
-                <Text style={{ color: "#555" }}>
-                  {session.subject || "공부"} (
-                  {formatLongTime(session.duration)})
-                </Text>
-              </View>
-            ))}
-          </View>
-        ))}
-    </View>
-  );
-};
-
-/**
- * 자동 리포트 알림 정보 카드
- */
-const AutomaticReportInfoCard = ({
-  isSubscribed,
-  activeTab,
-  notificationsSetup,
-}) => {
-  if (!isSubscribed || activeTab === REPORT_TYPES.DAILY) {
-    return null;
-  }
-
-  // 주간/월간에 따른 다른 내용
-  const title =
-    activeTab === REPORT_TYPES.WEEKLY
-      ? "주간 상세 리포트 자동 생성"
-      : "월간 상세 리포트 자동 생성";
-
-  const message =
-    activeTab === REPORT_TYPES.WEEKLY
-      ? "매주 일요일 밤 9시에 자동으로 상세 분석 리포트가 생성됩니다. 지난 주의 활동을 종합적으로 분석한 보고서를 확인하세요."
-      : "매월 마지막 날 밤 9시에 자동으로 상세 분석 리포트가 생성됩니다. 한 달간의 활동을 심층 분석한 보고서가 저장됩니다.";
-
-  return (
-    <View style={additionalStyles.notificationCard}>
-      <View style={additionalStyles.notificationHeader}>
-        <Ionicons name="notifications" size={20} color="#FFB74D" />
-        <Text style={additionalStyles.notificationTitle}>{title}</Text>
-      </View>
-      <Text style={additionalStyles.notificationMessage}>{message}</Text>
-      <Text style={additionalStyles.notificationHint}>
-        {notificationsSetup
-          ? "알림이 설정되어 있습니다. 새 리포트가 생성되면 자동으로 알려드립니다."
-          : "알림 설정에 문제가 있습니다. 앱을 재시작하거나 설정을 확인해주세요."}
-      </Text>
-    </View>
-  );
-};
-
-/**
- * 피드백 화면 메인 컴포넌트
- */
 const AIFeedbackScreen = () => {
-  // 컨텍스트에서 데이터 가져오기
+  const [inputText, setInputText] = useState("");
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [isStarted, setIsStarted] = useState(false);
+  const [userContext, setUserContext] = useState(null);
+
+  // 1일 1회 제한 상태
+  const [hasAnalyzedToday, setHasAnalyzedToday] = useState(false);
+  const [currentDate, setCurrentDate] = useState(
+    format(new Date(), "yyyy-MM-dd")
+  );
+
+  // 프로필 수집 상태
+  const [profileStep, setProfileStep] = useState(0);
+  const [isCollectingProfile, setIsCollectingProfile] = useState(false);
+  const [profileData, setProfileData] = useState({});
+  const [showAnalysisScreen, setShowAnalysisScreen] = useState(false);
+  const [analysisInput, setAnalysisInput] = useState("");
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState(null);
+
+  const [yesterdayResult, setYesterdayResult] = useState(null);
+  const [recentResults, setRecentResults] = useState([]);
+  const [selectedResultIndex, setSelectedResultIndex] = useState(0);
+
+  const [isInputMode, setIsInputMode] = useState(false);
+  const slideAnim = useRef(new Animated.Value(0)).current;
+  const [showProfileScreen, setShowProfileScreen] = useState(false);
+  const [editingField, setEditingField] = useState(null);
+  const [editValue, setEditValue] = useState("");
+
+  // 🆕 오류 상태 추가
+  const [error, setError] = useState(null);
+  const [isRetrying, setIsRetrying] = useState(false);
+
+  // 🆕 자정 체크용 타이머
+  const midnightTimerRef = useRef(null);
+  const appStateRef = useRef(AppState.currentState);
+
+  // 🆕 실시간 카운트다운
+  const [timeRemaining, setTimeRemaining] = useState("");
+  const countdownTimerRef = useRef(null);
+
+  const scrollViewRef = useRef(null);
+  const inputScrollViewRef = useRef(null);
+
   const {
-    schedules = {},
-    tasks = {},
-    aiReports = {},
-    generateAIFeedback,
-    selectedDate,
-    earnedBadges,
-    setSelectedDate,
-    studySessions = {},
-    goalTargets = [],
-  } = usePlanner() || {};
+    schedules,
+    tasks,
+    studySessions,
+    goalTargets,
+    weeklyStats,
+    monthlyStats,
+  } = usePlanner();
 
-  // 구독 상태
-  const { isSubscribed } = useSubscription();
+  // 🆕 임시 저장 키
+  const TEMP_PROFILE_KEY = "@temp_profile_data";
 
-  // 포인트 및 진행 정보
-  const { points } = useProgress();
+  // 🆕 개선된 프로필 질문들 (학교/전공 제거, 성별 옵션 변경)
+  const profileQuestions = [
+    {
+      key: "name",
+      question: "이름이나 닉네임을 알려주세요!",
+      type: "text",
+      validation: (value) => value.trim().length > 0,
+      errorMsg: "이름을 입력해주세요.",
+    },
+    {
+      key: "age",
+      question: "나이를 알려주실 수 있나요?",
+      type: "text",
+      validation: (value) => {
+        const num = parseInt(value.trim());
+        return !isNaN(num) && num > 0 && num < 150;
+      },
+      errorMsg: "올바른 나이를 입력해주세요. (1-149)",
+    },
+    {
+      key: "gender",
+      question: "성별을 선택해주세요!",
+      type: "buttons",
+      options: ["남성", "여성"],
+    },
+    {
+      key: "occupation",
+      question: "현재 어떤 일을 하고 계세요?",
+      type: "text",
+      validation: (value) => value.trim().length > 0,
+      errorMsg: "현재 상황을 알려주세요.",
+    },
+    {
+      key: "personality",
+      question: "본인의 성격이나 MBTI가 있다면 알려주세요!",
+      type: "text",
+      placeholder: "예: ENFP, 외향적, 꼼꼼함 등 (선택사항)",
+    },
+    {
+      key: "goal",
+      question: "현재 가장 중요한 목표가 있나요?",
+      type: "text",
+      placeholder: "예: 토익 900점, 취업 준비 등 (선택사항)",
+    },
+    {
+      key: "studyStyle",
+      question: "어떤 학습 스타일을 선호하시나요?",
+      type: "buttons",
+      options: [
+        { label: "몰입형 - 한 가지에 집중", value: "intensive" },
+        { label: "분산형 - 여러 과목 번갈아", value: "distributed" },
+        { label: "균형형 - 일과 학습의 조화", value: "balanced" },
+      ],
+    },
+  ];
 
-  // 상태 관리
-  const [activeTab, setActiveTab] = useState(REPORT_TYPES.DAILY);
-  const [isLoading, setIsLoading] = useState(false);
-  const [currentReport, setCurrentReport] = useState(null);
-  const [lastUpdateTime, setLastUpdateTime] = useState(new Date());
-  const [activeCategory, setActiveCategory] = useState("all");
-  const [savedWeeklyReports, setSavedWeeklyReports] = useState({});
-  const [savedMonthlyReports, setSavedMonthlyReports] = useState({});
-  const [notificationsSetup, setNotificationsSetup] = useState(false);
-
-  // 참조
-  const autoRefreshTimer = useRef(null);
-  const initializedRef = useRef(false);
-  const navigation = useNavigation();
-
-  // 구독 페이지로 이동
-  const handleUpgrade = useCallback(() => {
-    navigation.navigate("Subscription");
-  }, [navigation]);
-
-  // 저장된 리포트 로드
-  const loadSavedReports = useCallback(async () => {
-    try {
-      const weeklyReports = await EnhancedFeedbackService.getSavedAIReports(
-        REPORT_TYPES.WEEKLY
-      );
-      const monthlyReports = await EnhancedFeedbackService.getSavedAIReports(
-        REPORT_TYPES.MONTHLY
-      );
-
-      setSavedWeeklyReports(weeklyReports);
-      setSavedMonthlyReports(monthlyReports);
-
-      // 알림 설정 상태 확인
-      const notificationsStatus = await AsyncStorage.getItem(
-        STORAGE_KEYS.NOTIFICATIONS_SETUP
-      );
-      setNotificationsSetup(notificationsStatus === "true");
-
-      console.log(
-        `${Object.keys(weeklyReports).length}개의 주간 리포트와 ${
-          Object.keys(monthlyReports).length
-        }개의 월간 리포트를 로드했습니다.`
-      );
-    } catch (error) {
-      console.error("저장된 리포트 로드 오류:", error);
-    }
-  }, []);
-
-  // 리포트 스케줄링 설정
-  const setupReportScheduling = useCallback(async () => {
-    // 이미 초기화되었으면 중복 실행 방지
-    if (initializedRef.current) {
-      console.log("알림 설정이 이미 초기화되었습니다");
+  // 🆕 실시간 카운트다운 업데이트
+  const updateCountdown = () => {
+    if (!hasAnalyzedToday) {
+      setTimeRemaining("");
       return;
     }
 
-    // 알림 상태 및 구독 상태 확인
-    try {
-      const notificationStatus = await AsyncStorage.getItem(
-        STORAGE_KEYS.NOTIFICATIONS_SETUP
-      );
-      const isAlreadySetup = notificationStatus === "true";
+    const now = new Date();
+    const midnight = new Date();
+    midnight.setHours(24, 0, 0, 0);
+    const diff = midnight.getTime() - now.getTime();
 
-      // 설정 상태와 구독 상태가 일치하면 다시 설정할 필요 없음
-      if (isAlreadySetup && isSubscribed) {
-        setNotificationsSetup(true);
-        initializedRef.current = true;
-        return;
-      }
-    } catch (error) {
-      console.error("알림 설정 상태 확인 오류:", error);
+    if (diff <= 0) {
+      setTimeRemaining("");
+      checkAndUpdateDailyLimit();
+      return;
     }
 
-    // 리포트 스케줄링 업데이트
-    const success = await EnhancedFeedbackService.updateReportScheduling(
-      isSubscribed
-    );
-    setNotificationsSetup(success);
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds = Math.floor((diff % (1000 * 60)) / 1000);
 
-    if (success && isSubscribed) {
-      ToastEventSystem.showToast(
-        "주간 및 월간 상세 리포트 알림이 설정되었습니다",
-        3000
-      );
+    setTimeRemaining(`${hours}시간 ${minutes}분 ${seconds}초`);
+  };
+
+  // 🆕 카운트다운 타이머 시작
+  const startCountdownTimer = () => {
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current);
     }
 
-    // 초기화 완료 표시
-    initializedRef.current = true;
-  }, [isSubscribed]);
+    updateCountdown();
+    countdownTimerRef.current = setInterval(updateCountdown, 1000);
+  };
 
-  // 자동 갱신 타이머 설정
-  const setupAutoRefresh = useCallback(() => {
-    // 기존 타이머 해제
-    if (autoRefreshTimer.current) {
-      clearTimeout(autoRefreshTimer.current);
+  // 🆕 카운트다운 타이머 정지
+  const stopCountdownTimer = () => {
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
     }
+  };
+
+  // 🆕 자정까지 남은 시간 계산
+  const getTimeUntilMidnight = () => {
+    const now = new Date();
+    const midnight = new Date();
+    midnight.setHours(24, 0, 0, 0); // 다음 날 0시
+    return midnight.getTime() - now.getTime();
+  };
+
+  // 🆕 자정 타이머 설정
+  const setupMidnightTimer = () => {
+    if (midnightTimerRef.current) {
+      clearTimeout(midnightTimerRef.current);
+    }
+
+    const timeUntilMidnight = getTimeUntilMidnight();
+
+    midnightTimerRef.current = setTimeout(() => {
+      console.log("🕛 자정이 되어 AI 분석 제한이 초기화됩니다.");
+      checkAndUpdateDailyLimit();
+      // 다음 자정을 위한 타이머 재설정
+      setupMidnightTimer();
+    }, timeUntilMidnight);
 
     console.log(
-      `${activeTab} 리포트 자동 갱신 타이머 설정: ${
-        AUTO_REFRESH_INTERVALS[activeTab] / 60000
-      }분`
+      `⏰ 자정 타이머 설정됨: ${Math.round(
+        timeUntilMidnight / 1000 / 60
+      )}분 후 초기화`
     );
+  };
 
-    // 현재 탭에 맞는 새 타이머 설정
-    autoRefreshTimer.current = setTimeout(() => {
-      console.log(`${activeTab} 리포트 자동 갱신 중`);
-      handleGenerateFeedback(false); // 자동 갱신은 기본 분석만
-    }, AUTO_REFRESH_INTERVALS[activeTab]);
-  }, [activeTab, handleGenerateFeedback]);
+  // 🆕 날짜 변경 체크 및 제한 업데이트
+  const checkAndUpdateDailyLimit = async () => {
+    const today = format(new Date(), "yyyy-MM-dd");
 
-  // 리포트 데이터 로드
-  const loadReportData = useCallback(async () => {
-    setIsLoading(true);
+    if (currentDate !== today) {
+      console.log(`📅 날짜 변경 감지: ${currentDate} → ${today}`);
+      setCurrentDate(today);
+
+      // 새로운 날짜의 분석 여부 체크
+      const todayAnalysis = await hasAnalysisToday();
+      setHasAnalyzedToday(todayAnalysis);
+
+      console.log(
+        `🔄 AI 분석 상태 업데이트: ${todayAnalysis ? "사용완료" : "사용가능"}`
+      );
+    }
+  };
+
+  // 🆕 앱 상태 변경 감지
+  const handleAppStateChange = (nextAppState) => {
+    if (appStateRef.current === "background" && nextAppState === "active") {
+      console.log("📱 앱이 포그라운드로 돌아옴 - 날짜 체크");
+      checkAndUpdateDailyLimit();
+    }
+    appStateRef.current = nextAppState;
+  };
+
+  // 🆕 임시 저장 함수
+  const saveTempProfile = async (stepData) => {
+    try {
+      const tempData = {
+        ...profileData,
+        ...stepData,
+        currentStep: profileStep,
+        lastSaved: new Date().toISOString(),
+      };
+      await AsyncStorage.setItem(TEMP_PROFILE_KEY, JSON.stringify(tempData));
+      console.log(`프로필 임시 저장 완료 - 단계: ${profileStep + 1}`);
+    } catch (error) {
+      console.error("임시 저장 오류:", error);
+    }
+  };
+
+  // 🆕 임시 저장 데이터 로드
+  const loadTempProfile = async () => {
+    try {
+      const tempData = await AsyncStorage.getItem(TEMP_PROFILE_KEY);
+      if (tempData) {
+        const parsed = JSON.parse(tempData);
+        // 24시간 이내 데이터만 복원
+        const lastSaved = new Date(parsed.lastSaved);
+        const now = new Date();
+        const diffHours = (now - lastSaved) / (1000 * 60 * 60);
+
+        if (diffHours < 24) {
+          setProfileData(parsed);
+          setProfileStep(parsed.currentStep || 0);
+          return true;
+        } else {
+          // 오래된 임시 데이터 삭제
+          await AsyncStorage.removeItem(TEMP_PROFILE_KEY);
+        }
+      }
+      return false;
+    } catch (error) {
+      console.error("임시 데이터 로드 오류:", error);
+      return false;
+    }
+  };
+
+  // 🆕 임시 저장 데이터 삭제
+  const clearTempProfile = async () => {
+    try {
+      await AsyncStorage.removeItem(TEMP_PROFILE_KEY);
+      console.log("임시 프로필 데이터 삭제 완료");
+    } catch (error) {
+      console.error("임시 데이터 삭제 오류:", error);
+    }
+  };
+
+  // 🆕 개선된 오류 처리 함수
+  const handleError = (error, context = "작업") => {
+    console.error(`${context} 오류:`, error);
+
+    let userMessage = "문제가 발생했습니다.";
+
+    if (
+      error.message?.includes("network") ||
+      error.message?.includes("fetch")
+    ) {
+      userMessage = "인터넷 연결을 확인해주세요.";
+    } else if (error.message?.includes("storage")) {
+      userMessage = "데이터 저장 중 문제가 발생했습니다.";
+    } else if (error.message?.includes("API")) {
+      userMessage = "AI 서비스에 일시적인 문제가 발생했습니다.";
+    }
+
+    setError({ message: userMessage, context, canRetry: true });
+  };
+
+  // 🆕 재시도 함수
+  const handleRetry = async () => {
+    setIsRetrying(true);
+    setError(null);
 
     try {
-      if (!schedules || !tasks) {
-        console.warn("필요한 데이터가 아직 로드되지 않았습니다");
-        setTimeout(loadReportData, 500); // 0.5초 후 재시도
-        return;
+      if (error?.context === "AI 분석") {
+        await handleAnalysisRequest();
+      } else if (error?.context === "프로필 저장") {
+        await completeProfileSetup(profileData);
+      }
+    } catch (retryError) {
+      handleError(retryError, error?.context);
+    } finally {
+      setIsRetrying(false);
+    }
+  };
+
+  // 프로필 수정 함수
+  const handleProfileEdit = async (field, newValue) => {
+    if (!userContext) return;
+
+    try {
+      // 🆕 나이 필드 숫자 변환
+      let processedValue = newValue.trim();
+      if (field === "age") {
+        const ageNum = parseInt(processedValue);
+        if (isNaN(ageNum) || ageNum <= 0 || ageNum >= 150) {
+          Alert.alert("오류", "올바른 나이를 입력해주세요. (1-149)");
+          return;
+        }
+        processedValue = ageNum;
       }
 
-      console.log("리포트 데이터 로드 중:", activeTab, selectedDate);
-      let report = null;
+      const updatedContext = {
+        ...userContext,
+        [field]: processedValue,
+        lastActiveDate: new Date().toISOString(),
+      };
 
-      // 먼저 메모리에서 기존 리포트 찾기
-      if (aiReports && Object.keys(aiReports).length > 0) {
-        if (activeTab === REPORT_TYPES.DAILY) {
-          report = aiReports[selectedDate];
-        } else if (activeTab === REPORT_TYPES.WEEKLY) {
-          const weekKey = `week-${format(
-            new Date(selectedDate),
-            "yyyy-MM-dd"
-          )}`;
-          report = aiReports[weekKey];
-        } else if (activeTab === REPORT_TYPES.MONTHLY) {
-          const monthKey = `month-${format(new Date(selectedDate), "yyyy-MM")}`;
-          report = aiReports[monthKey];
-        }
+      await saveUserContext(updatedContext);
+      setUserContext(updatedContext);
+      setEditingField(null);
+      setEditValue("");
+      console.log("프로필 수정 완료:", field, processedValue);
+    } catch (error) {
+      handleError(error, "프로필 수정");
+    }
+  };
+
+  // 프로필 화면 렌더링 (교육 항목 제거)
+  const renderProfileScreen = () => {
+    if (!userContext) return null;
+
+    const profileFields = [
+      {
+        key: "name",
+        label: "이름/닉네임",
+        icon: "person",
+        value: userContext.name,
+      },
+      { key: "age", label: "나이", icon: "calendar", value: userContext.age },
+      {
+        key: "gender",
+        label: "성별",
+        icon: "male-female",
+        value: userContext.gender || "미입력",
+      },
+      {
+        key: "occupation",
+        label: "직업/상황",
+        icon: "briefcase",
+        value: userContext.occupation,
+      },
+      {
+        key: "personality",
+        label: "성격/MBTI",
+        icon: "happy",
+        value: userContext.personality || "미입력",
+      },
+      {
+        key: "targetGoal",
+        label: "목표",
+        icon: "flag",
+        value: userContext.targetGoal || "미입력",
+      },
+      {
+        key: "preferredStyle",
+        label: "학습 스타일",
+        icon: "library",
+        value:
+          userContext.preferredStyle === "intensive"
+            ? "몰입형"
+            : userContext.preferredStyle === "distributed"
+            ? "분산형"
+            : "균형형",
+      },
+    ];
+
+    return (
+      <KeyboardAvoidingView
+        style={{ flex: 1, backgroundColor: "#fafbfc" }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 0}
+      >
+        {/* 헤더 */}
+        <View
+          style={{
+            backgroundColor: "#ffffff",
+            paddingHorizontal: 16,
+            paddingVertical: 12,
+            borderBottomWidth: 1,
+            borderBottomColor: "#eee",
+            flexDirection: "row",
+            alignItems: "center",
+          }}
+        >
+          <TouchableOpacity
+            onPress={() => {
+              setShowProfileScreen(false);
+              setEditingField(null);
+              setEditValue("");
+            }}
+            style={{ marginRight: 12 }}
+          >
+            <Ionicons name="arrow-back" size={24} color="#333" />
+          </TouchableOpacity>
+          <Text
+            style={{
+              fontSize: 18,
+              fontWeight: "600",
+              color: "#333",
+              flex: 1,
+            }}
+          >
+            내 프로필
+          </Text>
+          <Text style={{ fontSize: 12, color: "#999" }}>
+            {userContext.totalSessions || 0}회 사용
+          </Text>
+        </View>
+
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{
+            padding: 20,
+            paddingBottom: keyboardHeight > 0 ? keyboardHeight + 40 : 40,
+          }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* 프로필 카드 */}
+          <View
+            style={{
+              backgroundColor: "#ffffff",
+              padding: 24,
+              borderRadius: 20,
+              marginBottom: 20,
+              shadowColor: "#000",
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.08,
+              shadowRadius: 12,
+              elevation: 4,
+              borderWidth: 1,
+              borderColor: "#f0f0f0",
+            }}
+          >
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                marginBottom: 20,
+              }}
+            >
+              <View
+                style={{
+                  width: 60,
+                  height: 60,
+                  borderRadius: 30,
+                  backgroundColor: "#50cebb",
+                  justifyContent: "center",
+                  alignItems: "center",
+                  marginRight: 16,
+                }}
+              >
+                <Ionicons name="person" size={28} color="#fff" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text
+                  style={{ fontSize: 20, fontWeight: "700", color: "#1a1a1a" }}
+                >
+                  {userContext.name}님의 프로필
+                </Text>
+                <Text style={{ fontSize: 12, color: "#888", marginTop: 4 }}>
+                  가입일:{" "}
+                  {format(new Date(userContext.createdAt), "yyyy년 M월 d일")}
+                </Text>
+              </View>
+            </View>
+
+            {profileFields.map((field, index) => (
+              <View
+                key={field.key}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  paddingVertical: 16,
+                  borderBottomWidth: index === profileFields.length - 1 ? 0 : 1,
+                  borderBottomColor: "#f5f5f5",
+                }}
+              >
+                <View
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 20,
+                    backgroundColor: "#f8f9fa",
+                    justifyContent: "center",
+                    alignItems: "center",
+                    marginRight: 16,
+                  }}
+                >
+                  <Ionicons name={field.icon} size={20} color="#50cebb" />
+                </View>
+
+                <View style={{ flex: 1 }}>
+                  <Text
+                    style={{ fontSize: 14, color: "#666", marginBottom: 4 }}
+                  >
+                    {field.label}
+                  </Text>
+                  {editingField === field.key ? (
+                    <View
+                      style={{ flexDirection: "row", alignItems: "center" }}
+                    >
+                      {field.key === "gender" ? (
+                        // 성별은 버튼으로 선택
+                        <View style={{ flex: 1, flexDirection: "row", gap: 8 }}>
+                          {["남성", "여성"].map((option) => (
+                            <TouchableOpacity
+                              key={option}
+                              style={{
+                                flex: 1,
+                                backgroundColor:
+                                  editValue === option ? "#50cebb" : "#f8f9fa",
+                                borderRadius: 8,
+                                paddingVertical: 10,
+                                alignItems: "center",
+                                borderWidth: 1,
+                                borderColor:
+                                  editValue === option ? "#50cebb" : "#e0e0e0",
+                              }}
+                              onPress={() => setEditValue(option)}
+                            >
+                              <Text
+                                style={{
+                                  color: editValue === option ? "#fff" : "#333",
+                                  fontSize: 14,
+                                  fontWeight: "600",
+                                }}
+                              >
+                                {option}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      ) : field.key === "preferredStyle" ? (
+                        // 학습 스타일은 버튼으로 선택
+                        <View style={{ flex: 1, gap: 4 }}>
+                          {[
+                            { label: "몰입형", value: "intensive" },
+                            { label: "분산형", value: "distributed" },
+                            { label: "균형형", value: "balanced" },
+                          ].map((option) => (
+                            <TouchableOpacity
+                              key={option.value}
+                              style={{
+                                backgroundColor:
+                                  editValue === option.value
+                                    ? "#50cebb"
+                                    : "#f8f9fa",
+                                borderRadius: 8,
+                                paddingVertical: 8,
+                                paddingHorizontal: 12,
+                                borderWidth: 1,
+                                borderColor:
+                                  editValue === option.value
+                                    ? "#50cebb"
+                                    : "#e0e0e0",
+                              }}
+                              onPress={() => setEditValue(option.value)}
+                            >
+                              <Text
+                                style={{
+                                  color:
+                                    editValue === option.value
+                                      ? "#fff"
+                                      : "#333",
+                                  fontSize: 14,
+                                  fontWeight: "600",
+                                  textAlign: "center",
+                                }}
+                              >
+                                {option.label}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      ) : (
+                        // 일반 텍스트 입력
+                        <TextInput
+                          style={{
+                            flex: 1,
+                            borderWidth: 1,
+                            borderColor: "#50cebb",
+                            borderRadius: 8,
+                            paddingHorizontal: 12,
+                            paddingVertical: 8,
+                            fontSize: 16,
+                            backgroundColor: "#fff",
+                            minHeight: 40,
+                          }}
+                          value={editValue}
+                          onChangeText={setEditValue}
+                          autoFocus
+                          placeholder={field.label}
+                          keyboardType={
+                            field.key === "age" ? "numeric" : "default"
+                          }
+                        />
+                      )}
+                      <TouchableOpacity
+                        style={{
+                          marginLeft: 8,
+                          backgroundColor: "#50cebb",
+                          borderRadius: 16,
+                          paddingHorizontal: 12,
+                          paddingVertical: 6,
+                        }}
+                        onPress={() => handleProfileEdit(field.key, editValue)}
+                      >
+                        <Text
+                          style={{
+                            color: "#fff",
+                            fontSize: 12,
+                            fontWeight: "600",
+                          }}
+                        >
+                          저장
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={{ marginLeft: 4, padding: 6 }}
+                        onPress={() => {
+                          setEditingField(null);
+                          setEditValue("");
+                        }}
+                      >
+                        <Ionicons name="close" size={16} color="#999" />
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <TouchableOpacity
+                      onPress={() => {
+                        setEditingField(field.key);
+                        setEditValue(
+                          field.value === "미입력" ? "" : field.value.toString()
+                        );
+                      }}
+                      style={{ flexDirection: "row", alignItems: "center" }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 16,
+                          color: field.value === "미입력" ? "#999" : "#333",
+                          flex: 1,
+                        }}
+                      >
+                        {field.value}
+                      </Text>
+                      <Ionicons name="create-outline" size={16} color="#999" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+            ))}
+          </View>
+
+          {/* 설정 완료 정보 */}
+          <View
+            style={{
+              backgroundColor: "#ffffff",
+              padding: 20,
+              borderRadius: 16,
+              shadowColor: "#000",
+              shadowOffset: { width: 0, height: 1 },
+              shadowOpacity: 0.05,
+              shadowRadius: 8,
+              elevation: 2,
+              borderWidth: 1,
+              borderColor: "#f0f0f0",
+            }}
+          >
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                marginBottom: 16,
+              }}
+            >
+              <Ionicons name="checkmark-circle" size={20} color="#50cebb" />
+              <Text
+                style={{
+                  fontSize: 16,
+                  fontWeight: "600",
+                  color: "#1a1a1a",
+                  marginLeft: 8,
+                }}
+              >
+                설정 완료
+              </Text>
+            </View>
+            <Text
+              style={{
+                fontSize: 14,
+                color: "#666",
+                lineHeight: 20,
+              }}
+            >
+              프로필 설정이 완료되어{"\n"}
+              개인화된 AI 피드백을 받으실 수 있습니다.
+            </Text>
+          </View>
+
+          <View style={{ height: 50 }} />
+        </ScrollView>
+      </KeyboardAvoidingView>
+    );
+  };
+
+  const toggleInputMode = () => {
+    const toValue = isInputMode ? 0 : 1;
+    setIsInputMode(!isInputMode);
+
+    Animated.timing(slideAnim, {
+      toValue,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const returnToResultMode = () => {
+    setIsInputMode(false);
+    Animated.timing(slideAnim, {
+      toValue: 0,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const renderStartScreen = () => (
+    <View
+      style={{
+        flex: 1,
+        justifyContent: "center",
+        alignItems: "center",
+        paddingHorizontal: 32,
+      }}
+    >
+      <View
+        style={{
+          alignItems: "center",
+          marginBottom: 40,
+        }}
+      >
+        <Ionicons
+          name="sparkles"
+          size={64}
+          color="#50cebb"
+          style={{ marginBottom: 20 }}
+        />
+        <Text
+          style={{
+            fontSize: 24,
+            fontWeight: "bold",
+            color: "#333",
+            marginBottom: 12,
+            textAlign: "center",
+          }}
+        >
+          AI 맞춤 피드백
+        </Text>
+        <Text
+          style={{
+            fontSize: 16,
+            color: "#666",
+            textAlign: "center",
+            lineHeight: 24,
+          }}
+        >
+          당신만의 AI 학습 코치가{"\n"}
+          개인화된 조언을 제공합니다
+        </Text>
+      </View>
+
+      <TouchableOpacity
+        style={{
+          backgroundColor: "#50cebb",
+          paddingHorizontal: 32,
+          paddingVertical: 16,
+          borderRadius: 25,
+          flexDirection: "row",
+          alignItems: "center",
+          shadowColor: "#000",
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.1,
+          shadowRadius: 4,
+          elevation: 3,
+        }}
+        onPress={handleStartAI}
+      >
+        <Ionicons
+          name="play"
+          size={20}
+          color="#fff"
+          style={{ marginRight: 8 }}
+        />
+        <Text
+          style={{
+            color: "#fff",
+            fontSize: 18,
+            fontWeight: "600",
+          }}
+        >
+          AI 코치 시작하기
+        </Text>
+      </TouchableOpacity>
+
+      <Text
+        style={{
+          fontSize: 12,
+          color: "#999",
+          textAlign: "center",
+          marginTop: 20,
+          lineHeight: 18,
+        }}
+      >
+        💡 몇 가지 간단한 설정으로{"\n"}
+        당신만의 AI 코치를 만들어보세요
+      </Text>
+    </View>
+  );
+
+  // 🆕 개선된 프로필 설정 화면 (임시 저장 포함)
+  const renderProfileSetupScreen = () => {
+    const currentQuestion = profileQuestions[profileStep];
+
+    return (
+      <KeyboardAvoidingView
+        style={{ flex: 1, backgroundColor: "#fafbfc" }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 0}
+      >
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{
+            flexGrow: 1,
+            padding: 20,
+            paddingBottom: keyboardHeight > 0 ? keyboardHeight + 40 : 40,
+          }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* 진행 상황 */}
+          <View style={{ marginBottom: 30 }}>
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 8,
+              }}
+            >
+              <Text style={{ fontSize: 14, color: "#888" }}>
+                진행 상황: {profileStep + 1} / {profileQuestions.length}
+              </Text>
+              <Text style={{ fontSize: 14, color: "#888" }}>
+                {Math.round(
+                  ((profileStep + 1) / profileQuestions.length) * 100
+                )}
+                %
+              </Text>
+            </View>
+            <View
+              style={{
+                height: 4,
+                backgroundColor: "#e0e0e0",
+                borderRadius: 2,
+              }}
+            >
+              <View
+                style={{
+                  height: 4,
+                  backgroundColor: "#50cebb",
+                  borderRadius: 2,
+                  width: `${
+                    ((profileStep + 1) / profileQuestions.length) * 100
+                  }%`,
+                }}
+              />
+            </View>
+          </View>
+
+          {/* 질문 카드 */}
+          <View
+            style={{
+              backgroundColor: "#ffffff",
+              padding: 24,
+              borderRadius: 20,
+              marginBottom: 30,
+              shadowColor: "#000",
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.08,
+              shadowRadius: 12,
+              elevation: 4,
+              borderWidth: 1,
+              borderColor: "#f0f0f0",
+            }}
+          >
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                marginBottom: 20,
+              }}
+            >
+              <View
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 20,
+                  backgroundColor: "#50cebb",
+                  justifyContent: "center",
+                  alignItems: "center",
+                  marginRight: 12,
+                }}
+              >
+                <Ionicons name="help" size={20} color="#fff" />
+              </View>
+              <Text
+                style={{
+                  fontSize: 18,
+                  fontWeight: "700",
+                  color: "#1a1a1a",
+                  flex: 1,
+                }}
+              >
+                질문 {profileStep + 1}
+              </Text>
+            </View>
+
+            <Text
+              style={{
+                fontSize: 16,
+                color: "#333",
+                lineHeight: 24,
+                marginBottom: 20,
+              }}
+            >
+              {currentQuestion.question}
+            </Text>
+
+            {/* 입력 방식에 따른 UI */}
+            {currentQuestion.type === "text" ? (
+              <TextInput
+                style={{
+                  borderWidth: 1,
+                  borderColor: "#e0e0e0",
+                  borderRadius: 12,
+                  paddingHorizontal: 16,
+                  paddingVertical: 12,
+                  fontSize: 16,
+                  backgroundColor: "#ffffff",
+                  minHeight: 48,
+                }}
+                value={inputText}
+                onChangeText={setInputText}
+                placeholder={
+                  currentQuestion.placeholder || "답변을 입력해주세요..."
+                }
+                placeholderTextColor="#999"
+                keyboardType={
+                  currentQuestion.key === "age" ? "numeric" : "default"
+                }
+              />
+            ) : (
+              // 버튼 선택
+              <View>
+                {currentQuestion.options.map((option, index) => {
+                  const isObject = typeof option === "object";
+                  const label = isObject ? option.label : option;
+                  const value = isObject ? option.value : option;
+
+                  return (
+                    <TouchableOpacity
+                      key={index}
+                      style={{
+                        backgroundColor:
+                          inputText === value ? "#50cebb" : "#f8f9fa",
+                        padding: 16,
+                        borderRadius: 12,
+                        marginBottom: 12,
+                        borderWidth: 1,
+                        borderColor:
+                          inputText === value ? "#50cebb" : "#e0e0e0",
+                      }}
+                      onPress={() => setInputText(value)}
+                    >
+                      <Text
+                        style={{
+                          color: inputText === value ? "#fff" : "#333",
+                          fontSize: 16,
+                          fontWeight: inputText === value ? "600" : "400",
+                          textAlign: "center",
+                        }}
+                      >
+                        {label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+          </View>
+
+          {/* 버튼들 */}
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              gap: 12,
+            }}
+          >
+            {profileStep > 0 && (
+              <TouchableOpacity
+                style={{
+                  flex: 1,
+                  backgroundColor: "#f8f9fa",
+                  paddingVertical: 16,
+                  borderRadius: 12,
+                  alignItems: "center",
+                  borderWidth: 1,
+                  borderColor: "#e0e0e0",
+                }}
+                onPress={() => {
+                  setProfileStep(profileStep - 1);
+                  setInputText("");
+                }}
+              >
+                <Text
+                  style={{ color: "#666", fontSize: 16, fontWeight: "600" }}
+                >
+                  이전
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity
+              style={{
+                flex: profileStep > 0 ? 1 : 1,
+                backgroundColor: canProceedToNext() ? "#50cebb" : "#e0e0e0",
+                paddingVertical: 16,
+                borderRadius: 12,
+                alignItems: "center",
+              }}
+              onPress={handleNextStep}
+              disabled={!canProceedToNext()}
+            >
+              <Text
+                style={{
+                  color: canProceedToNext() ? "#fff" : "#999",
+                  fontSize: 16,
+                  fontWeight: "600",
+                }}
+              >
+                {profileStep === profileQuestions.length - 1 ? "완료" : "다음"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    );
+  };
+
+  // 🆕 다음 단계 진행 가능 여부 확인
+  const canProceedToNext = () => {
+    const currentQuestion = profileQuestions[profileStep];
+    const answer = inputText.trim();
+
+    // 필수 필드 체크
+    if (currentQuestion.validation) {
+      return currentQuestion.validation(answer);
+    }
+
+    // 선택사항은 빈 값도 허용
+    return true;
+  };
+
+  useEffect(() => {
+    const keyboardDidShowListener = Keyboard.addListener(
+      "keyboardDidShow",
+      (e) => setKeyboardHeight(e.endCoordinates.height)
+    );
+    const keyboardDidHideListener = Keyboard.addListener(
+      "keyboardDidHide",
+      () => setKeyboardHeight(0)
+    );
+
+    // 🆕 앱 상태 변경 리스너 추가
+    const appStateSubscription = AppState.addEventListener(
+      "change",
+      handleAppStateChange
+    );
+
+    loadInitialData();
+
+    // 🆕 자정 타이머 설정
+    setupMidnightTimer();
+
+    return () => {
+      keyboardDidHideListener?.remove();
+      keyboardDidShowListener?.remove();
+      appStateSubscription?.remove();
+
+      // 🆕 타이머 정리
+      if (midnightTimerRef.current) {
+        clearTimeout(midnightTimerRef.current);
       }
+      stopCountdownTimer();
+    };
+  }, []);
 
-      // 메모리에 없으면 스토리지에서 리포트 로드 시도
-      if (
-        !report &&
-        (activeTab === REPORT_TYPES.WEEKLY ||
-          activeTab === REPORT_TYPES.MONTHLY)
-      ) {
-        let savedReports;
-        let reportKey;
+  // 🆕 hasAnalyzedToday 변경 시 카운트다운 관리
+  useEffect(() => {
+    if (hasAnalyzedToday) {
+      startCountdownTimer();
+    } else {
+      stopCountdownTimer();
+      setTimeRemaining("");
+    }
+  }, [hasAnalyzedToday]);
 
-        if (activeTab === REPORT_TYPES.WEEKLY) {
-          // 주간 키 계산
-          const date = new Date(selectedDate);
-          const year = date.getFullYear();
-          const weekNumber = Math.ceil(
-            (date.getDate() + 6 - date.getDay()) / 7
-          );
-          reportKey = `${year}-W${weekNumber.toString().padStart(2, "0")}`;
-          savedReports = savedWeeklyReports;
-        } else {
-          // 월간 키 계산
-          reportKey = format(new Date(selectedDate), "yyyy-MM");
-          savedReports = savedMonthlyReports;
-        }
+  const loadInitialData = async () => {
+    try {
+      const [savedUserContext, yesterdayAnalysis, recentAnalyses] =
+        await Promise.all([
+          getUserContext(),
+          getYesterdayAnalysisResult(),
+          getRecentAnalysisResults(7),
+        ]);
 
-        if (savedReports && savedReports[reportKey]) {
-          report = savedReports[reportKey];
-          console.log(`저장된 ${activeTab} 리포트 로드: ${reportKey}`);
-        }
-      }
+      // 🆕 오늘 분석 여부 체크
+      const todayAnalysis = await hasAnalysisToday();
+      setHasAnalyzedToday(todayAnalysis);
 
-      // 리포트가 여전히 없으면 새로 생성
-      if (!report) {
-        if (generateAIFeedback) {
-          // 모든 사용자에게 기본 분석 생성
-          report = await generateAIFeedback(
-            selectedDate,
-            activeTab,
-            false, // 초기 생성에는 상세 분석 사용 안 함
-            isSubscribed // 구독 상태 전달
-          );
-
-          if (report) {
-            setCurrentReport(report);
-            setLastUpdateTime(new Date());
-          }
-        }
+      if (savedUserContext) {
+        setUserContext(savedUserContext);
+        setIsStarted(true);
+        setShowAnalysisScreen(true);
+        console.log("기존 사용자 복귀:", savedUserContext.name);
       } else {
-        setCurrentReport(report);
-        setLastUpdateTime(new Date());
+        // 🆕 임시 저장 데이터 확인
+        const hasTemp = await loadTempProfile();
+        if (hasTemp) {
+          console.log("임시 저장 데이터 복원됨");
+        }
+      }
+
+      if (yesterdayAnalysis) {
+        setYesterdayResult(yesterdayAnalysis);
+      }
+
+      if (recentAnalyses && recentAnalyses.length > 0) {
+        const today = format(new Date(), "yyyy-MM-dd");
+        const yesterday = format(
+          new Date(Date.now() - 24 * 60 * 60 * 1000),
+          "yyyy-MM-dd"
+        );
+
+        const processedResults = recentAnalyses.map((result) => {
+          const resultDate = result.date;
+          const isToday = resultDate === today;
+          const isYesterday = resultDate === yesterday;
+
+          const resultDateTime = new Date(resultDate).getTime();
+          const todayTime = new Date(today).getTime();
+          const daysAgo = Math.floor(
+            (todayTime - resultDateTime) / (24 * 60 * 60 * 1000)
+          );
+
+          return {
+            ...result,
+            isToday,
+            isYesterday,
+            daysAgo,
+          };
+        });
+
+        setRecentResults(processedResults);
+        setAnalysisResult(processedResults[0]);
+        setSelectedResultIndex(0);
+      }
+
+      console.log("초기 데이터 로드 완료:", {
+        hasUser: !!savedUserContext,
+        hasYesterday: !!yesterdayAnalysis,
+        recentCount: recentAnalyses?.length || 0,
+        hasAnalyzedToday: todayAnalysis,
+      });
+    } catch (error) {
+      handleError(error, "데이터 로드");
+    }
+  };
+
+  const handleStartAI = async () => {
+    setIsStarted(true);
+
+    // 🆕 임시 저장 데이터가 있는지 확인
+    const hasTemp = await loadTempProfile();
+    if (hasTemp) {
+      // 임시 데이터가 있으면 해당 단계부터 시작
+      Alert.alert(
+        "이전 설정 발견",
+        "이전에 설정하던 프로필 정보가 있습니다. 이어서 진행하시겠습니까?",
+        [
+          {
+            text: "새로 시작",
+            onPress: () => {
+              clearTempProfile();
+              setProfileData({});
+              setProfileStep(0);
+              setIsCollectingProfile(true);
+            },
+          },
+          {
+            text: "이어서 진행",
+            onPress: () => {
+              setIsCollectingProfile(true);
+            },
+          },
+        ]
+      );
+    } else {
+      setIsCollectingProfile(true);
+      setProfileStep(0);
+      setInputText("");
+    }
+  };
+
+  // 🆕 개선된 다음 단계 처리 (임시 저장 포함)
+  const handleNextStep = async () => {
+    const currentQuestion = profileQuestions[profileStep];
+    const answer = inputText.trim();
+
+    // 🆕 강화된 유효성 검사
+    if (currentQuestion.validation && !currentQuestion.validation(answer)) {
+      Alert.alert(
+        "입력 오류",
+        currentQuestion.errorMsg || "올바른 값을 입력해주세요."
+      );
+      return;
+    }
+
+    // 프로필 데이터 저장
+    const newProfileData = {
+      ...profileData,
+      [currentQuestion.key]: answer,
+    };
+    setProfileData(newProfileData);
+
+    // 🆕 임시 저장
+    await saveTempProfile({ [currentQuestion.key]: answer });
+
+    const nextStep = profileStep + 1;
+
+    if (nextStep < profileQuestions.length) {
+      // 다음 질문으로
+      setProfileStep(nextStep);
+      setInputText("");
+    } else {
+      // 모든 질문 완료
+      await completeProfileSetup(newProfileData);
+    }
+  };
+
+  // 🆕 개선된 프로필 설정 완료 (나이 숫자 변환 포함)
+  const completeProfileSetup = async (finalProfileData) => {
+    try {
+      let normalizedStyle = "balanced";
+      if (finalProfileData.studyStyle) {
+        normalizedStyle = finalProfileData.studyStyle;
+      }
+
+      // 🆕 나이를 숫자로 변환
+      const age = parseInt(finalProfileData.age);
+      if (isNaN(age) || age <= 0) {
+        throw new Error("올바르지 않은 나이 정보입니다.");
+      }
+
+      const newUserContext = {
+        name: finalProfileData.name,
+        age: age, // 🆕 숫자형으로 저장
+        gender:
+          finalProfileData.gender === "선택안함" ? "" : finalProfileData.gender,
+        occupation: finalProfileData.occupation,
+        personality: finalProfileData.personality || "",
+        targetGoal: finalProfileData.goal || "",
+        preferredStyle: normalizedStyle,
+        createdAt: new Date().toISOString(),
+        totalSessions: 0,
+        lastActiveDate: new Date().toISOString(),
+      };
+
+      await saveUserContext(newUserContext);
+      setUserContext(newUserContext);
+
+      // 🆕 임시 저장 데이터 삭제
+      await clearTempProfile();
+
+      // 1초 후 분석 화면으로 전환
+      setTimeout(() => {
+        setIsCollectingProfile(false);
+        setShowAnalysisScreen(true);
+        setInputText("");
+        setProfileStep(0);
+        setProfileData({});
+      }, 1000);
+
+      console.log("프로필 설정 완료:", newUserContext.name);
+    } catch (error) {
+      handleError(error, "프로필 저장");
+    }
+  };
+
+  // 🆕 개선된 AI 분석 요청 (오류 처리 강화)
+  const handleAnalysisRequest = async () => {
+    if (!analysisInput.trim() || isAnalyzing || hasAnalyzedToday) return;
+
+    setIsAnalyzing(true);
+    setError(null);
+
+    try {
+      const plannerData = {
+        schedules: schedules || {},
+        tasks: tasks || {},
+        studySessions: studySessions || {},
+        goalTargets: goalTargets || [],
+        weeklyStats: weeklyStats || {},
+        monthlyStats: monthlyStats || {},
+      };
+
+      const result = await testDeepSeekAPI({
+        reportType: "daily",
+        plannerData: plannerData,
+        userInput: analysisInput.trim(),
+        userContext: userContext,
+        chatHistory: [],
+      });
+
+      if (result.success) {
+        const newAnalysisResult = {
+          ...result.data,
+          userInput: analysisInput.trim(),
+          date: format(new Date(), "yyyy-MM-dd"),
+          timestamp: new Date().toISOString(),
+        };
+
+        setAnalysisResult(newAnalysisResult);
+
+        const today = format(new Date(), "yyyy-MM-dd");
+        await saveAnalysisResult(today, newAnalysisResult);
+
+        // 🆕 분석 완료 후 상태 업데이트
+        setHasAnalyzedToday(true);
+        setAnalysisInput("");
+
+        const updatedRecentResults = await getRecentAnalysisResults(7);
+        const yesterday = format(
+          new Date(Date.now() - 24 * 60 * 60 * 1000),
+          "yyyy-MM-dd"
+        );
+
+        const processedResults = updatedRecentResults.map((result) => {
+          const resultDate = result.date;
+          const isToday = resultDate === today;
+          const isYesterday = resultDate === yesterday;
+
+          const resultDateTime = new Date(resultDate).getTime();
+          const todayTime = new Date(today).getTime();
+          const daysAgo = Math.floor(
+            (todayTime - resultDateTime) / (24 * 60 * 60 * 1000)
+          );
+
+          return {
+            ...result,
+            isToday,
+            isYesterday,
+            daysAgo,
+          };
+        });
+
+        setRecentResults(processedResults);
+        setSelectedResultIndex(0);
+        returnToResultMode();
+
+        console.log(
+          "✅ 분석 완료 및 저장됨:",
+          today,
+          "- 다음 자정까지 비활성화"
+        );
+      } else {
+        throw new Error(result.error || "AI 분석에 실패했습니다.");
       }
     } catch (error) {
-      console.error("리포트 데이터 로드 오류:", error);
-      ToastEventSystem.showToast("데이터 로드 중 오류가 발생했습니다", 2000);
+      handleError(error, "AI 분석");
+      setAnalysisResult({
+        analysis: "분석 중 오류가 발생했습니다.",
+        insights: "잠시 후 다시 시도해주세요.",
+        userInput: analysisInput.trim(),
+        date: format(new Date(), "yyyy-MM-dd"),
+        timestamp: new Date().toISOString(),
+        isError: true,
+      });
+      returnToResultMode();
     } finally {
-      setIsLoading(false);
+      setIsAnalyzing(false);
     }
-  }, [
-    aiReports,
-    selectedDate,
-    activeTab,
-    generateAIFeedback,
-    isSubscribed,
-    schedules,
-    tasks,
-    savedWeeklyReports,
-    savedMonthlyReports,
-  ]);
+  };
 
-  // 피드백 생성 핸들러
-  const handleGenerateFeedback = useCallback(
-    async (useAI = false) => {
-      // 상세 분석에 대한 구독 확인
-      if (activeTab !== REPORT_TYPES.DAILY && useAI && !isSubscribed) {
-        ToastEventSystem.showToast("상세 분석은 구독자 전용 기능입니다", 2000);
-        handleUpgrade();
-        return;
-      }
-
-      setIsLoading(true);
-      try {
-        if (!generateAIFeedback) {
-          throw new Error("generateAIFeedback 함수를 사용할 수 없습니다");
-        }
-
-        // 리포트 생성
-        const report = await generateAIFeedback(
-          selectedDate,
-          activeTab,
-          useAI,
-          isSubscribed
-        );
-
-        if (report) {
-          setCurrentReport(report);
-          setLastUpdateTime(new Date());
-
-          // 상세 분석 리포트 저장 (주간 및 월간)
-          if (
-            useAI &&
-            (activeTab === REPORT_TYPES.WEEKLY ||
-              activeTab === REPORT_TYPES.MONTHLY)
-          ) {
-            // EnhancedFeedbackService의 리포트 저장 함수 사용
-            await EnhancedFeedbackService.saveReport(
-              selectedDate,
-              activeTab,
-              report
-            );
-
-            // 저장된 리포트 다시 로드
-            const updatedReports =
-              await EnhancedFeedbackService.getSavedAIReports(activeTab);
-            if (activeTab === REPORT_TYPES.WEEKLY) {
-              setSavedWeeklyReports(updatedReports);
-            } else {
-              setSavedMonthlyReports(updatedReports);
-            }
-
-            // 확인 메시지 표시
-            ToastEventSystem.showToast(
-              `${
-                activeTab === REPORT_TYPES.WEEKLY ? "주간" : "월간"
-              } 상세 리포트가 저장되었습니다`,
-              2000
-            );
-          }
-        }
-      } catch (error) {
-        console.error("리포트 생성 오류:", error);
-        Alert.alert(
-          "오류 발생",
-          "리포트 생성 중 문제가 발생했습니다. 다시 시도해주세요."
-        );
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    [activeTab, selectedDate, isSubscribed, generateAIFeedback, handleUpgrade]
-  );
-
-  // 탭 변경 핸들러
-  const handleTabChange = useCallback(
-    (tabName) => {
-      // 모든 탭으로 전환 가능
-      setActiveTab(tabName);
-
-      // 비구독자가 주간/월간 탭 선택 시 알림
-      if (
-        (tabName === REPORT_TYPES.WEEKLY || tabName === REPORT_TYPES.MONTHLY) &&
-        !isSubscribed
-      ) {
-        ToastEventSystem.showToast(
-          `${
-            tabName === REPORT_TYPES.WEEKLY ? "주간" : "월간"
-          } 리포트는 일부 기능만 제공됩니다`,
-          2000
-        );
-      }
-    },
-    [isSubscribed]
-  );
-
-  // 날짜 포맷 유틸리티
-  const formatLastUpdateTime = useCallback(
-    (date) => format(date, "yyyy년 MM월 dd일 HH:mm"),
-    []
-  );
-
-  // 컴포넌트 마운트 시 초기화
-  useEffect(() => {
-    // 저장된 리포트 로드
-    loadSavedReports();
-
-    // 리포트 스케줄링 설정 (한 번만)
-    if (!initializedRef.current) {
-      setupReportScheduling();
+  // 날짜별 분석 결과 선택 함수
+  const selectAnalysisResult = (index) => {
+    if (recentResults[index]) {
+      setSelectedResultIndex(index);
+      setAnalysisResult(recentResults[index]);
     }
+  };
 
-    // 언마운트 시 타이머 정리
-    return () => {
-      if (autoRefreshTimer.current) {
-        clearTimeout(autoRefreshTimer.current);
-      }
-    };
-  }, [loadSavedReports, setupReportScheduling]);
+  // 날짜 포맷팅 함수
+  const formatAnalysisDate = (dateStr, isToday, isYesterday, daysAgo) => {
+    if (isToday) return "오늘";
+    if (isYesterday) return "어제";
+    if (daysAgo === 2) return "그제";
+    if (daysAgo <= 7) return `${daysAgo}일 전`;
+    return format(new Date(dateStr), "M/d");
+  };
 
-  // 탭이나 날짜 변경 시 리포트 데이터 로드
-  useEffect(() => {
-    loadReportData();
-    setupAutoRefresh();
-  }, [selectedDate, activeTab, isSubscribed, loadReportData, setupAutoRefresh]);
-
-  // 주간 리포트 추가 콘텐츠 렌더링
-  const renderWeeklyExtraContent = useMemo(() => {
-    if (activeTab !== REPORT_TYPES.WEEKLY || !currentReport) {
-      return null;
-    }
+  // 🆕 오류 표시 컴포넌트
+  const renderError = () => {
+    if (!error) return null;
 
     return (
-      <View style={styles.weeklyExtraContainer}>
-        {/* 공부 시간 차트 */}
-        {currentReport.dailyStudyTime && (
-          <WeeklyStudyChart dailyStudyTime={currentReport.dailyStudyTime} />
-        )}
-
-        {/* 주간 테마 섹션 - 프리미엄 기능 */}
-        <CollapsibleCard
-          title="이번 주 테마"
-          icon="flash"
-          borderColor={THEME_COLORS.premium}
+      <View
+        style={{
+          backgroundColor: "#fff3cd",
+          padding: 16,
+          margin: 20,
+          borderRadius: 12,
+          borderLeftWidth: 4,
+          borderLeftColor: "#ffc107",
+        }}
+      >
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            marginBottom: 12,
+          }}
         >
-          {isSubscribed ? (
-            <>
-              <Text style={styles.themeText}>
-                "{currentReport.weeklyTheme || "데이터 분석 중..."}"
-              </Text>
-              <View style={styles.focusSection}>
-                <Text style={styles.focusTitle}>다음 주 집중 영역</Text>
-                <Text style={styles.focusText}>
-                  {currentReport.focusAdvice ||
-                    "충분한 데이터가 쌓이면 제안해 드릴게요."}
-                </Text>
-              </View>
-            </>
-          ) : (
-            <View style={styles.premiumPreviewContainer}>
-              <Text style={styles.previewText} numberOfLines={3}>
-                상세 분석을 통해 당신의 학습 패턴을 분석하여{"\n"}이번 주의
-                특징과 테마를 도출합니다.{"\n"}앞으로의 집중 영역도 추천해
-                드립니다.
-              </Text>
-              <View style={styles.previewOverlay}>
-                <TouchableOpacity
-                  style={styles.upgradeButton}
-                  onPress={handleUpgrade}
-                >
-                  <Text style={styles.upgradeButtonText}>
-                    프리미엄으로 확인하기
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-        </CollapsibleCard>
-
-        {/* 일정 인사이트 섹션 - 프리미엄 기능 */}
-        <CollapsibleCard
-          title="일정 인사이트"
-          icon="calendar"
-          borderColor={THEME_COLORS.info}
-        >
-          {isSubscribed ? (
-            <>
-              <Text style={styles.scheduleInsightsText}>
-                {currentReport.scheduleInsights ||
-                  "데이터를 분석하고 있습니다..."}
-              </Text>
-
-              {/* 일정 유형 분포 */}
-              {currentReport.scheduleTypeCount && (
-                <View style={styles.scheduleTypesContainer}>
-                  <Text style={styles.scheduleTypesTitle}>일정 유형 분포</Text>
-                  <View style={styles.scheduleTypesChart}>
-                    {Object.entries(currentReport.scheduleTypeCount)
-                      .filter(([_, count]) => count > 0)
-                      .map(([type, count]) => {
-                        const total = Object.values(
-                          currentReport.scheduleTypeCount
-                        ).reduce((sum, val) => sum + val, 0);
-                        const percentage = Math.round((count / total) * 100);
-                        return (
-                          <View key={type} style={styles.scheduleTypeItem}>
-                            <View style={styles.scheduleTypeHeader}>
-                              <Text style={styles.scheduleTypeName}>
-                                {type}
-                              </Text>
-                              <Text style={styles.scheduleTypeCount}>
-                                {count}개
-                              </Text>
-                            </View>
-                            <View style={styles.scheduleTypeBarContainer}>
-                              <View
-                                style={[
-                                  styles.scheduleTypeBar,
-                                  {
-                                    width: `${percentage}%`,
-                                    backgroundColor: getColor(
-                                      "scheduleType",
-                                      type
-                                    ),
-                                  },
-                                ]}
-                              />
-                            </View>
-                          </View>
-                        );
-                      })}
-                  </View>
-                </View>
-              )}
-            </>
-          ) : (
-            <View style={styles.premiumPreviewContainer}>
-              <Text style={styles.previewText} numberOfLines={3}>
-                상세 분석을 통해 당신의 일정 패턴을 분석하여 생산성을 높일 수
-                있는 맞춤형 인사이트를 제공합니다. 일정 유형별 분포와 균형에
-                대한 조언도 확인하세요.
-              </Text>
-              <View style={styles.previewOverlay}>
-                <TouchableOpacity
-                  style={styles.upgradeButton}
-                  onPress={handleUpgrade}
-                >
-                  <Text style={styles.upgradeButtonText}>
-                    프리미엄으로 확인하기
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-        </CollapsibleCard>
-      </View>
-    );
-  }, [activeTab, currentReport, isSubscribed, handleUpgrade]);
-
-  // 월간 리포트 추가 콘텐츠 렌더링
-  const renderMonthlyExtraContent = useMemo(() => {
-    if (
-      activeTab !== REPORT_TYPES.MONTHLY ||
-      !currentReport ||
-      !currentReport.monthlyOverview
-    ) {
-      return null;
-    }
-
-    return (
-      <View style={styles.monthlyExtraContainer}>
-        {/* 과목별 공부 시간 차트 */}
-        {currentReport.subjectAnalysis && (
-          <MonthlySubjectChart
-            subjectAnalysis={currentReport.subjectAnalysis}
-          />
-        )}
-
-        {/* 월간 개요 - 프리미엄 기능 */}
-        <CollapsibleCard title="월간 개요" icon="analytics">
-          <Text style={styles.overviewText}>
-            {currentReport.monthlyOverview ||
-              "이번 달 활동 데이터를 분석했습니다."}
-          </Text>
-        </CollapsibleCard>
-
-        {/* 월간 테마 - 프리미엄 기능 */}
-        <CollapsibleCard title="이번 달 테마" icon="star" borderColor="#FFD700">
-          {isSubscribed ? (
-            <>
-              <Text style={styles.themeText}>
-                "{currentReport.monthlyTheme || "데이터 분석 중..."}"
-              </Text>
-
-              <View style={styles.focusSection}>
-                <Text style={styles.focusTitle}>다음 달 집중 포인트</Text>
-                <Text style={styles.focusText}>
-                  {currentReport.nextMonthFocus ||
-                    "충분한 데이터가 쌓이면 제안해 드릴게요."}
-                </Text>
-              </View>
-            </>
-          ) : (
-            <View style={styles.premiumPreviewContainer}>
-              <Text style={styles.previewText} numberOfLines={3}>
-                상세 분석을 통해 당신의 월간 활동 데이터를 종합하여 특별한
-                테마를 도출하고, 다음 달을 위한 핵심 집중 영역을 제안합니다.
-              </Text>
-              <View style={styles.previewOverlay}>
-                <TouchableOpacity
-                  style={styles.upgradeButton}
-                  onPress={handleUpgrade}
-                >
-                  <Text style={styles.upgradeButtonText}>
-                    프리미엄으로 확인하기
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-        </CollapsibleCard>
-
-        {/* 생산성 점수 - 프리미엄 기능 */}
-        <CollapsibleCard
-          title="생산성 점수"
-          icon="analytics"
-          borderColor={THEME_COLORS.success}
-        >
-          {isSubscribed && currentReport.productivityScore ? (
-            <>
-              <View style={styles.scoreContainer}>
-                <Text style={styles.scoreValue}>
-                  {currentReport.productivityScore}
-                </Text>
-                <Text style={styles.scoreMax}>/100</Text>
-              </View>
-              <View style={styles.scoreBarContainer}>
-                <View
-                  style={[
-                    styles.scoreBar,
-                    { width: `${currentReport.productivityScore}%` },
-                  ]}
-                />
-              </View>
-            </>
-          ) : (
-            <View style={styles.premiumPreviewContainer}>
-              <Text style={styles.previewText} numberOfLines={3}>
-                상세 분석을 통해 당신의 월간 활동을 종합 평가하여 100점 만점의
-                생산성 점수를 제공합니다. 월간 목표 달성도, 일정 완료율, 학습
-                시간 등을 종합적으로 분석하여 객관적인 지표를 확인할 수
-                있습니다.
-              </Text>
-              <View style={styles.previewOverlay}>
-                <TouchableOpacity
-                  style={styles.upgradeButton}
-                  onPress={handleUpgrade}
-                >
-                  <Text style={styles.upgradeButtonText}>
-                    프리미엄으로 확인하기
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-        </CollapsibleCard>
-
-        {/* 일정 패턴 분석 - 프리미엄 기능 */}
-        <CollapsibleCard
-          title="일정 패턴 분석"
-          icon="analytics"
-          borderColor={THEME_COLORS.success}
-        >
-          {isSubscribed ? (
-            <>
-              <Text style={styles.schedulePatternText}>
-                {currentReport.schedulePatternInsights ||
-                  "데이터를 분석하고 있습니다..."}
-              </Text>
-
-              {/* 요일별 일정 분포 */}
-              {currentReport.schedulesByDay &&
-                typeof currentReport.schedulesByDay === "object" &&
-                Object.keys(currentReport.schedulesByDay).length > 0 && (
-                  <View style={styles.dayDistributionContainer}>
-                    <Text style={styles.dayDistributionTitle}>
-                      요일별 일정 분포
-                    </Text>
-                    <View style={styles.dayDistributionChart}>
-                      {["월", "화", "수", "목", "금", "토", "일"].map((day) => {
-                        const count = currentReport.schedulesByDay[day] || 0;
-                        const maxCount = Math.max(
-                          ...Object.values(currentReport.schedulesByDay).map(
-                            (v) => v || 0
-                          )
-                        );
-                        const percentage =
-                          maxCount > 0 ? (count / maxCount) * 100 : 0;
-
-                        return (
-                          <View key={day} style={styles.dayColumn}>
-                            <View style={styles.dayBarContainer}>
-                              <View
-                                style={[
-                                  styles.dayBar,
-                                  { height: `${percentage}%` },
-                                ]}
-                              />
-                            </View>
-                            <Text style={styles.dayLabel}>{day}</Text>
-                            <Text style={styles.dayCount}>{count}</Text>
-                          </View>
-                        );
-                      })}
-                    </View>
-                  </View>
-                )}
-
-              {/* 시간대별 일정 분포 */}
-              {currentReport.schedulesByTimeSlot &&
-                typeof currentReport.schedulesByTimeSlot === "object" &&
-                Object.keys(currentReport.schedulesByTimeSlot).length > 0 && (
-                  <View style={styles.timeSlotContainer}>
-                    <Text style={styles.timeSlotTitle}>시간대별 일정 분포</Text>
-                    <View style={styles.timeSlotChart}>
-                      {Object.entries(currentReport.schedulesByTimeSlot).map(
-                        ([timeSlot, count]) => {
-                          const total = Object.values(
-                            currentReport.schedulesByTimeSlot
-                          ).reduce((sum, val) => sum + (val || 0), 0);
-                          const percentage =
-                            total > 0 ? Math.round((count / total) * 100) : 0;
-
-                          return (
-                            <View key={timeSlot} style={styles.timeSlotItem}>
-                              <View style={styles.timeSlotHeader}>
-                                <Text style={styles.timeSlotName}>
-                                  {timeSlot}
-                                </Text>
-                                <Text style={styles.timeSlotCount}>
-                                  {`${count || 0}개 (${percentage || 0}%)`}
-                                </Text>
-                              </View>
-                              <View style={styles.timeSlotBarContainer}>
-                                <View
-                                  style={[
-                                    styles.timeSlotBar,
-                                    {
-                                      width: `${percentage}%`,
-                                      backgroundColor: getColor(
-                                        "timeSlot",
-                                        timeSlot
-                                      ),
-                                    },
-                                  ]}
-                                />
-                              </View>
-                            </View>
-                          );
-                        }
-                      )}
-                    </View>
-                  </View>
-                )}
-
-              {/* 자주 반복되는 일정 */}
-              {currentReport.frequentTasks &&
-                Array.isArray(currentReport.frequentTasks) &&
-                currentReport.frequentTasks.length > 0 && (
-                  <View style={styles.frequentTasksContainer}>
-                    <Text style={styles.frequentTasksTitle}>
-                      자주 반복되는 일정
-                    </Text>
-                    <View style={styles.frequentTasksList}>
-                      {currentReport.frequentTasks.map((task, index) => (
-                        <View key={index} style={styles.frequentTaskItem}>
-                          <Text style={styles.frequentTaskName}>
-                            {task && task.task ? task.task : "-"}
-                          </Text>
-                          <View style={styles.frequentTaskCountContainer}>
-                            <Text style={styles.frequentTaskCount}>
-                              {task && task.count ? `${task.count}회` : "0회"}
-                            </Text>
-                          </View>
-                        </View>
-                      ))}
-                    </View>
-                  </View>
-                )}
-            </>
-          ) : (
-            <View style={styles.premiumPreviewContainer}>
-              <Text style={styles.previewText} numberOfLines={3}>
-                상세 분석을 통해 당신의 일정 패턴을 심층 분석하여 요일별,
-                시간대별 생산성 패턴과 최적의 일정 배치를 제안합니다. 생산성을
-                극대화할 수 있는 맞춤형 인사이트를 확인하세요.
-              </Text>
-              <View style={styles.previewOverlay}>
-                <TouchableOpacity
-                  style={styles.upgradeButton}
-                  onPress={handleUpgrade}
-                >
-                  <Text style={styles.upgradeButtonText}>
-                    프리미엄으로 확인하기
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-        </CollapsibleCard>
-
-        {/* 활동 통계 */}
-        <View style={styles.activityRatioCard}>
-          <Text style={styles.activityRatioTitle}>월간 활동 통계</Text>
-          <View style={styles.activityStats}>
-            <View style={styles.activityStatItem}>
-              <Text style={styles.activityStatValue}>
-                {currentReport.daysWithStudy || 0}일
-              </Text>
-              <Text style={styles.activityStatLabel}>활동일</Text>
-            </View>
-            <View style={styles.activityStatItem}>
-              <Text style={styles.activityStatValue}>
-                {currentReport.activityRatio || 0}%
-              </Text>
-              <Text style={styles.activityStatLabel}>활동 비율</Text>
-            </View>
-            <View style={styles.activityStatItem}>
-              <Text style={styles.activityStatValue}>
-                {currentReport.avgDailyHours || 0}시간
-              </Text>
-              <Text style={styles.activityStatLabel}>일평균</Text>
-            </View>
-          </View>
-        </View>
-      </View>
-    );
-  }, [activeTab, currentReport, isSubscribed, handleUpgrade]);
-
-  // 리포트 렌더링 함수
-  const renderReport = () => {
-    if (isLoading) {
-      return (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={THEME_COLORS.primary} />
-          <Text style={styles.loadingText}>데이터를 분석하고 있습니다...</Text>
-        </View>
-      );
-    }
-
-    if (!currentReport) {
-      return (
-        <View style={styles.emptyContainer}>
-          <Ionicons name="analytics-outline" size={64} color="#aaa" />
-          <Text style={styles.emptyText}>아직 생성된 리포트가 없습니다.</Text>
-
-          <TouchableOpacity
-            style={styles.generateButton}
-            onPress={() => handleGenerateFeedback(false)}
+          <Ionicons name="warning" size={20} color="#856404" />
+          <Text
+            style={{
+              fontSize: 16,
+              fontWeight: "600",
+              color: "#856404",
+              marginLeft: 8,
+            }}
           >
-            <Text style={styles.generateButtonText}>리포트 생성하기</Text>
-          </TouchableOpacity>
-        </View>
-      );
-    }
-
-    return (
-      <View style={styles.reportContainer}>
-        <View style={styles.reportHeader}>
-          <Text style={styles.reportTitle}>
-            {activeTab === REPORT_TYPES.DAILY
-              ? "일간 리포트"
-              : activeTab === REPORT_TYPES.WEEKLY
-              ? "주간 리포트"
-              : "월간 리포트"}
+            문제가 발생했습니다
           </Text>
-          <Text style={styles.reportDate}>
-            {activeTab === REPORT_TYPES.DAILY
-              ? format(new Date(selectedDate), "yyyy년 MM월 dd일")
-              : activeTab === REPORT_TYPES.WEEKLY
-              ? `${format(
-                  sub(new Date(selectedDate), {
-                    days: new Date(selectedDate).getDay(),
-                  }),
-                  "MM/dd"
-                )} ~ ${format(
-                  sub(new Date(selectedDate), {
-                    days: new Date(selectedDate).getDay() - 6,
-                  }),
-                  "MM/dd"
-                )}`
-              : format(new Date(selectedDate), "yyyy년 MM월")}
-          </Text>
-
-          {/* 비구독자용 제한 배지 */}
-          {(activeTab === REPORT_TYPES.WEEKLY ||
-            activeTab === REPORT_TYPES.MONTHLY) &&
-            !isSubscribed && (
-              <View style={additionalStyles.limitedBadge}>
-                <Text style={additionalStyles.limitedBadgeText}>
-                  제한된 기능
-                </Text>
-              </View>
-            )}
-
-          {/* 구독자용 상세 분석 배지 */}
-          {currentReport && currentReport.isAIGenerated && isSubscribed && (
-            <View style={styles.aiBadge}>
-              <Text style={styles.aiBadgeText}>상세 분석</Text>
-            </View>
-          )}
         </View>
-
-        {/* 일간 리포트의 경우 일정 및 공부 섹션을 상단에 배치 */}
-        {activeTab === REPORT_TYPES.DAILY && (
-          <>
-            {/* 일일 공부 세션 차트 */}
-            <DailyStudyChart studySessions={studySessions[selectedDate]} />
-
-            {/* 오늘의 일정 및 공부 컴포넌트 */}
-            <CollapsibleCard
-              title="오늘의 일정 및 공부"
-              icon="today-outline"
-              borderColor="#50cebb"
-              initiallyExpanded={true}
+        <Text
+          style={{
+            fontSize: 14,
+            color: "#856404",
+            lineHeight: 20,
+            marginBottom: 16,
+          }}
+        >
+          {error.message}
+        </Text>
+        {error.canRetry && (
+          <TouchableOpacity
+            style={{
+              backgroundColor: "#ffc107",
+              paddingHorizontal: 16,
+              paddingVertical: 10,
+              borderRadius: 8,
+              alignSelf: "flex-start",
+            }}
+            onPress={handleRetry}
+            disabled={isRetrying}
+          >
+            <Text
+              style={{
+                color: "#ffffff",
+                fontSize: 14,
+                fontWeight: "600",
+              }}
             >
-              <TodayScheduleAndStudy
-                studySessions={studySessions}
-                schedules={schedules}
-                selectedDate={selectedDate}
-              />
-            </CollapsibleCard>
-
-            {/* D-Day 상태 섹션 */}
-            <GoalSection goalTargets={goalTargets} />
-          </>
-        )}
-
-        {/* 자동 리포트 정보 (구독자용) */}
-        <AutomaticReportInfoCard
-          isSubscribed={isSubscribed}
-          activeTab={activeTab}
-          notificationsSetup={notificationsSetup}
-        />
-
-        {/* 주간 리포트 추가 콘텐츠 */}
-        {renderWeeklyExtraContent}
-
-        {/* 월간 리포트 추가 콘텐츠 */}
-        {renderMonthlyExtraContent}
-
-        {/* 모든 리포트 유형 공통 섹션 */}
-        <CollapsibleCard title="인사이트" icon="bulb-outline">
-          <Text style={styles.insightText}>
-            {currentReport.insights || "데이터 분석 중..."}
-          </Text>
-        </CollapsibleCard>
-
-        {/* 주요 통계 */}
-        <View style={styles.statsCard}>
-          <Text style={styles.statsTitle}>주요 통계</Text>
-          <View style={styles.statRow}>
-            <View style={styles.statItem}>
-              <Text style={styles.statValue}>
-                {currentReport.completionRate || "0"}%
-              </Text>
-              <Text style={styles.statLabel}>일정 완료율</Text>
-            </View>
-            <View style={styles.statItem}>
-              <Text style={styles.statValue}>
-                {currentReport.totalHours || "0"}시간
-              </Text>
-              <Text style={styles.statLabel}>총 활동시간</Text>
-            </View>
-            <View style={styles.statItem}>
-              <Text style={styles.statValue}>
-                {activeTab === REPORT_TYPES.DAILY
-                  ? currentReport.mostProductiveTime || "N/A"
-                  : activeTab === REPORT_TYPES.WEEKLY
-                  ? currentReport.mostProductiveDay
-                    ? format(new Date(currentReport.mostProductiveDay), "EEE", {
-                        locale: ko,
-                      })
-                    : "N/A"
-                  : currentReport.avgDailyHours || "0"}
-                시간
-              </Text>
-              <Text style={styles.statLabel}>
-                {activeTab === REPORT_TYPES.DAILY
-                  ? "생산성 높은 시간"
-                  : activeTab === REPORT_TYPES.WEEKLY
-                  ? "최고 생산성 날짜"
-                  : "일평균 활동시간"}
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        {/* 카테고리별 분석 */}
-        {currentReport.subjectAnalysis &&
-          Object.keys(currentReport.subjectAnalysis).length > 0 && (
-            <CollapsibleCard title="카테고리별 분석" icon="pie-chart">
-              <View style={styles.categoryList}>
-                {Object.entries(currentReport.subjectAnalysis)
-                  .sort((a, b) => b[1] - a[1])
-                  .map(([category, seconds]) => {
-                    const hours = Math.round((seconds / 3600) * 10) / 10;
-                    const totalSeconds = Object.values(
-                      currentReport.subjectAnalysis
-                    ).reduce((sum, val) => sum + val, 0);
-                    const percentage =
-                      totalSeconds > 0
-                        ? Math.round((seconds / totalSeconds) * 100)
-                        : 0;
-
-                    return (
-                      <View key={category} style={styles.categoryItem}>
-                        <View style={styles.categoryHeader}>
-                          <Text style={styles.categoryName}>{category}</Text>
-                          <Text style={styles.categoryTime}>{hours}시간</Text>
-                        </View>
-                        <View style={styles.progressContainer}>
-                          <View
-                            style={[
-                              styles.progressBar,
-                              {
-                                width: `${percentage}%`,
-                                backgroundColor: getColor("category", category),
-                              },
-                            ]}
-                          />
-                        </View>
-                      </View>
-                    );
-                  })}
-              </View>
-            </CollapsibleCard>
-          )}
-
-        {/* 주간 리포트의 일별 진행 상황 차트 */}
-        {activeTab === REPORT_TYPES.WEEKLY &&
-          currentReport.dailyCompletionRate && (
-            <CollapsibleCard title="일별 진행 상황" icon="calendar">
-              <View style={styles.weeklyChart}>
-                {Object.entries(currentReport.dailyCompletionRate)
-                  .sort((a, b) => a[0].localeCompare(b[0]))
-                  .map(([date, rate]) => {
-                    const dayName = format(new Date(date), "EEE", {
-                      locale: ko,
-                    });
-                    return (
-                      <View key={date} style={styles.weeklyChartItem}>
-                        <Text style={styles.weeklyChartDay}>{dayName}</Text>
-                        <View style={styles.weeklyChartBarContainer}>
-                          <View
-                            style={[
-                              styles.weeklyChartBar,
-                              { height: `${rate}%` },
-                            ]}
-                          />
-                        </View>
-                        <Text style={styles.weeklyChartValue}>{rate}%</Text>
-                      </View>
-                    );
-                  })}
-              </View>
-            </CollapsibleCard>
-          )}
-
-        {/* 개선 제안 */}
-        <CollapsibleCard
-          title={
-            activeTab === REPORT_TYPES.MONTHLY
-              ? "장기적 개선 방향"
-              : "개선 제안"
-          }
-          icon="trending-up"
-          borderColor="#f0f8ff"
-        >
-          <Text style={styles.recommendationText}>
-            {activeTab === REPORT_TYPES.MONTHLY
-              ? currentReport.longTermRecommendations ||
-                "충분한 데이터가 쌓이면 제안을 드릴게요."
-              : currentReport.recommendations ||
-                "충분한 데이터가 쌓이면 제안을 드릴게요."}
-          </Text>
-        </CollapsibleCard>
-
-        {/* 일간 리포트용 새로고침 버튼 */}
-        {activeTab === REPORT_TYPES.DAILY && (
-          <TouchableOpacity
-            style={styles.refreshButton}
-            onPress={() => handleGenerateFeedback(false)}
-          >
-            <Text style={styles.refreshButtonText}>리포트 새로고침</Text>
+              {isRetrying ? "재시도 중..." : "다시 시도"}
+            </Text>
           </TouchableOpacity>
         )}
-
-        {/* 자동 업데이트 정보 */}
-        <View style={styles.autoUpdateContainer}>
-          <Text style={styles.autoUpdateInfo}>
-            {activeTab === REPORT_TYPES.DAILY
-              ? "일간 리포트는 5분마다 자동으로 갱신됩니다."
-              : activeTab === REPORT_TYPES.WEEKLY
-              ? "주간 리포트는 하루마다 자동으로 갱신됩니다."
-              : "월간 리포트는 일주일마다 자동으로 갱신됩니다."}
-          </Text>
-          <Text style={styles.lastUpdateInfo}>
-            마지막 갱신: {formatLastUpdateTime(lastUpdateTime)}
-          </Text>
-        </View>
-
-        {/* 상세 분석 정보 (주간/월간) */}
-        {(activeTab === REPORT_TYPES.WEEKLY ||
-          activeTab === REPORT_TYPES.MONTHLY) && (
-          <View style={styles.aiScheduleContainer}>
-            {isSubscribed ? (
-              // 구독자용 메시지
-              <View style={styles.subscriberInfoContainer}>
-                <Ionicons
-                  name="time-outline"
-                  size={18}
-                  color="#50cebb"
-                  style={{ marginRight: 8 }}
-                />
-                <Text style={styles.aiScheduleText}>
-                  {activeTab === REPORT_TYPES.WEEKLY
-                    ? "상세 분석 리포트는 매주 일요일 밤 9시에 자동 생성됩니다."
-                    : "상세 분석 리포트는 매월 마지막 날 밤 9시에 자동 생성됩니다."}
-                </Text>
-              </View>
-            ) : (
-              // 비구독자용 메시지와 버튼
-              <View style={styles.premiumFeatureContainer}>
-                <Text style={styles.premiumFeatureText}>
-                  {activeTab === REPORT_TYPES.WEEKLY
-                    ? "주간 상세 분석으로 더 정확한 인사이트를 받아보세요."
-                    : "월간 상세 분석으로 장기적인 패턴을 파악해보세요."}
-                </Text>
-
-                <TouchableOpacity
-                  style={styles.upgradeButtonNew}
-                  onPress={handleUpgrade}
-                >
-                  <Text style={styles.upgradeButtonText}>
-                    프리미엄으로 업그레이드
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        )}
-
-        {/* 하단 여백 */}
-        <View style={styles.bottomSpacer} />
       </View>
     );
   };
 
-  return (
-    <SafeAreaView style={styles.container}>
-      <HeaderBar
-        navigation={navigation}
-        badgeCount={earnedBadges?.length || 0}
-        notificationCount={0}
-      />
+  // 분석 결과 화면 렌더링
+  const renderAnalysisResultView = () => (
+    <View style={{ flex: 1, backgroundColor: "#fafbfc" }}>
+      {/* 오류 표시 */}
+      {error && renderError()}
 
-      {/* 업그레이드 버튼이 있는 탭 컨테이너 */}
-      <View style={styles.tabContainerWithUpgrade}>
-        <View style={styles.tabsSection}>
-          <TouchableOpacity
-            style={[
-              styles.tab,
-              activeTab === REPORT_TYPES.DAILY && styles.activeTab,
-            ]}
-            onPress={() => handleTabChange(REPORT_TYPES.DAILY)}
+      {/* 날짜별 탭 */}
+      {recentResults.length > 0 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={{
+            backgroundColor: "#ffffff",
+            borderBottomWidth: 1,
+            borderBottomColor: "#f0f0f0",
+            maxHeight: 60,
+          }}
+          contentContainerStyle={{
+            paddingHorizontal: 16,
+            paddingVertical: 10,
+            alignItems: "center",
+          }}
+        >
+          {recentResults.map((result, index) => {
+            const displayText = formatAnalysisDate(
+              result.date,
+              result.isToday,
+              result.isYesterday,
+              result.daysAgo
+            );
+
+            return (
+              <TouchableOpacity
+                key={`${result.date}-${index}`}
+                style={{
+                  paddingHorizontal: 16,
+                  paddingVertical: 8,
+                  borderRadius: 20,
+                  backgroundColor:
+                    selectedResultIndex === index ? "#50cebb" : "#f8f9fa",
+                  marginRight: 8,
+                  borderWidth: selectedResultIndex === index ? 0 : 1,
+                  borderColor: "#e0e0e0",
+                  minWidth: 60,
+                  height: 40,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+                onPress={() => selectAnalysisResult(index)}
+              >
+                <Text
+                  style={{
+                    color: selectedResultIndex === index ? "#ffffff" : "#666",
+                    fontSize: 14,
+                    fontWeight: selectedResultIndex === index ? "600" : "500",
+                    textAlign: "center",
+                  }}
+                >
+                  {displayText}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      )}
+
+      {/* 분석 결과 내용 */}
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{
+          padding: 20,
+          paddingBottom: 100,
+        }}
+        showsVerticalScrollIndicator={false}
+      >
+        <View
+          style={{
+            backgroundColor: "#ffffff",
+            padding: 24,
+            borderRadius: 20,
+            marginBottom: 20,
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.08,
+            shadowRadius: 12,
+            elevation: 4,
+            borderWidth: 1,
+            borderColor: "#f0f0f0",
+          }}
+        >
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              marginBottom: 16,
+            }}
           >
-            <Text
-              style={[
-                styles.tabText,
-                activeTab === REPORT_TYPES.DAILY && styles.activeTabText,
-              ]}
+            <View
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                backgroundColor: "#50cebb",
+                justifyContent: "center",
+                alignItems: "center",
+                marginRight: 12,
+              }}
             >
-              일간
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.tab,
-              activeTab === REPORT_TYPES.WEEKLY && styles.activeTab,
-              !isSubscribed && additionalStyles.lockedTab,
-            ]}
-            onPress={() => handleTabChange(REPORT_TYPES.WEEKLY)}
-          >
-            <View style={styles.tabLabelContainer}>
+              <Ionicons name="analytics" size={20} color="#fff" />
+            </View>
+            <View style={{ flex: 1 }}>
               <Text
-                style={[
-                  styles.tabText,
-                  activeTab === REPORT_TYPES.WEEKLY && styles.activeTabText,
-                ]}
+                style={{ fontSize: 18, fontWeight: "700", color: "#1a1a1a" }}
               >
-                주간
+                AI 분석 결과
               </Text>
-              {!isSubscribed && (
-                <Ionicons name="lock-closed" size={12} color="#FFB74D" />
+              {analysisResult.date && (
+                <Text style={{ fontSize: 12, color: "#888", marginTop: 2 }}>
+                  {format(new Date(analysisResult.date), "yyyy년 M월 d일")}
+                </Text>
               )}
             </View>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.tab,
-              activeTab === REPORT_TYPES.MONTHLY && styles.activeTab,
-              !isSubscribed && additionalStyles.lockedTab,
-            ]}
-            onPress={() => handleTabChange(REPORT_TYPES.MONTHLY)}
-          >
-            <View style={styles.tabLabelContainer}>
+          </View>
+
+          {/* 사용자 질문 표시 */}
+          {analysisResult.userInput && (
+            <View
+              style={{
+                backgroundColor: "#f8f9fa",
+                padding: 16,
+                borderRadius: 12,
+                marginBottom: 20,
+                borderLeftWidth: 4,
+                borderLeftColor: "#50cebb",
+              }}
+            >
               <Text
-                style={[
-                  styles.tabText,
-                  activeTab === REPORT_TYPES.MONTHLY && styles.activeTabText,
-                ]}
+                style={{
+                  fontSize: 14,
+                  color: "#555",
+                  fontWeight: "600",
+                  marginBottom: 4,
+                }}
               >
-                월간
+                💬 질문
               </Text>
-              {!isSubscribed && (
-                <Ionicons name="lock-closed" size={12} color="#FFB74D" />
-              )}
+              <Text
+                style={{
+                  fontSize: 15,
+                  color: "#333",
+                  lineHeight: 22,
+                }}
+              >
+                "{analysisResult.userInput}"
+              </Text>
             </View>
+          )}
+
+          <Text
+            style={{
+              fontSize: 15,
+              color: "#444",
+              lineHeight: 24,
+              marginBottom: 20,
+            }}
+          >
+            {analysisResult.analysis || analysisResult.insights}
+          </Text>
+
+          {analysisResult.recommendations && (
+            <View style={{ marginBottom: 16 }}>
+              <Text
+                style={{
+                  fontSize: 16,
+                  fontWeight: "600",
+                  color: "#1a1a1a",
+                  marginBottom: 12,
+                }}
+              >
+                📋 추천 일정
+              </Text>
+              {analysisResult.recommendations.slice(0, 3).map((rec, index) => (
+                <View
+                  key={index}
+                  style={{
+                    backgroundColor: "#f8f9fa",
+                    padding: 12,
+                    borderRadius: 10,
+                    marginBottom: 8,
+                    borderLeftWidth: 3,
+                    borderLeftColor: "#50cebb",
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      color: "#333",
+                      fontWeight: "500",
+                    }}
+                  >
+                    {rec.task}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: "#666", marginTop: 2 }}>
+                    {rec.time}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {analysisResult.focus_areas && (
+            <View
+              style={{
+                backgroundColor: "#fff3cd",
+                padding: 12,
+                borderRadius: 10,
+                borderLeftWidth: 3,
+                borderLeftColor: "#ffc107",
+                marginBottom: 16,
+              }}
+            >
+              <Text
+                style={{ fontSize: 14, color: "#856404", fontWeight: "600" }}
+              >
+                🎯 집중 영역: {analysisResult.focus_areas.join(", ")}
+              </Text>
+            </View>
+          )}
+
+          {analysisResult.personal_advice && (
+            <View
+              style={{
+                backgroundColor: "#e3f2fd",
+                padding: 16,
+                borderRadius: 12,
+                borderLeftWidth: 4,
+                borderLeftColor: "#2196f3",
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 14,
+                  color: "#1565c0",
+                  fontWeight: "600",
+                  marginBottom: 8,
+                }}
+              >
+                💝 {userContext?.name || "사용자"}님만을 위한 특별한 조언
+              </Text>
+              <Text
+                style={{
+                  fontSize: 14,
+                  color: "#1976d2",
+                  lineHeight: 20,
+                }}
+              >
+                {analysisResult.personal_advice}
+              </Text>
+            </View>
+          )}
+        </View>
+      </ScrollView>
+    </View>
+  );
+
+  // 입력 화면 렌더링
+  const renderAnalysisInputView = () => (
+    <KeyboardAvoidingView
+      style={{ flex: 1, backgroundColor: "#fafbfc" }}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 0}
+    >
+      <ScrollView
+        ref={inputScrollViewRef}
+        style={{ flex: 1 }}
+        contentContainerStyle={{
+          flexGrow: 1,
+          justifyContent: "center",
+          alignItems: "center",
+          paddingHorizontal: 32,
+          paddingVertical: 40,
+          paddingBottom: keyboardHeight > 0 ? keyboardHeight - 200 : 40,
+        }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* AI 분석 시작 버튼 - 중앙 배치 */}
+        <View style={{ alignItems: "center", marginBottom: 40 }}>
+          <TouchableOpacity
+            style={{
+              width: 140,
+              height: 140,
+              borderRadius: 70,
+              backgroundColor:
+                analysisInput.trim() && !isAnalyzing && !hasAnalyzedToday
+                  ? "#50cebb"
+                  : "#e0e0e0",
+              justifyContent: "center",
+              alignItems: "center",
+              shadowColor:
+                analysisInput.trim() && !isAnalyzing && !hasAnalyzedToday
+                  ? "#50cebb"
+                  : "#000",
+              shadowOffset: { width: 0, height: 8 },
+              shadowOpacity:
+                analysisInput.trim() && !isAnalyzing && !hasAnalyzedToday
+                  ? 0.3
+                  : 0.1,
+              shadowRadius: 16,
+              elevation: 12,
+              borderWidth: 3,
+              borderColor: "#ffffff",
+            }}
+            onPress={handleAnalysisRequest}
+            disabled={!analysisInput.trim() || isAnalyzing || hasAnalyzedToday}
+          >
+            {isAnalyzing ? (
+              <>
+                <Ionicons name="hourglass" size={40} color="#999" />
+                <Text
+                  style={{
+                    color: "#999",
+                    fontSize: 13,
+                    fontWeight: "600",
+                    marginTop: 8,
+                  }}
+                >
+                  분석 중...
+                </Text>
+              </>
+            ) : hasAnalyzedToday ? (
+              <>
+                <Ionicons name="checkmark-circle" size={40} color="#999" />
+                <Text
+                  style={{
+                    color: "#999",
+                    fontSize: 13,
+                    fontWeight: "600",
+                    marginTop: 8,
+                    textAlign: "center",
+                  }}
+                >
+                  오늘 분석 완료
+                </Text>
+              </>
+            ) : (
+              <>
+                <Ionicons name="analytics" size={42} color="#fff" />
+                <Text
+                  style={{
+                    color: "#fff",
+                    fontSize: 14,
+                    fontWeight: "700",
+                    marginTop: 8,
+                    letterSpacing: 0.5,
+                  }}
+                >
+                  AI 분석 시작
+                </Text>
+              </>
+            )}
           </TouchableOpacity>
+
+          {/* 상태 안내 텍스트 */}
+          <Text
+            style={{
+              fontSize: 13,
+              color: "#888",
+              textAlign: "center",
+              marginTop: 20,
+              fontWeight: "500",
+            }}
+          >
+            {hasAnalyzedToday
+              ? "🔒 다시 이용하려면 자정까지 기다려주세요"
+              : "💡 하루 1회 AI 분석 가능"}
+          </Text>
         </View>
 
-        {/* 비구독자만 업그레이드 버튼 표시 */}
-        {!isSubscribed && (
-          <TouchableOpacity
-            style={styles.upgradeProBadge}
-            onPress={handleUpgrade}
+        {/* 🆕 분석 완료 상태일 때는 완료 카드 표시 */}
+        {hasAnalyzedToday ? (
+          <View
+            style={{
+              width: "100%",
+              backgroundColor: "#ffffff",
+              padding: 24,
+              borderRadius: 20,
+              shadowColor: "#000",
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.08,
+              shadowRadius: 12,
+              elevation: 4,
+              borderWidth: 1,
+              borderColor: "#f0f0f0",
+            }}
           >
-            <Ionicons name="star" size={12} color="#fff" />
-            <Text style={styles.upgradeProText}>구독하기</Text>
-          </TouchableOpacity>
-        )}
-      </View>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                marginBottom: 16,
+              }}
+            >
+              <View
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 20,
+                  backgroundColor: "#50cebb",
+                  justifyContent: "center",
+                  alignItems: "center",
+                  marginRight: 12,
+                }}
+              >
+                <Ionicons name="checkmark-done" size={20} color="#fff" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text
+                  style={{
+                    fontSize: 16,
+                    fontWeight: "700",
+                    color: "#1a1a1a",
+                  }}
+                >
+                  오늘의 AI 분석 완료!
+                </Text>
+                <Text
+                  style={{
+                    fontSize: 12,
+                    color: "#888",
+                    marginTop: 2,
+                  }}
+                >
+                  {format(new Date(), "yyyy년 M월 d일")}
+                </Text>
+              </View>
+            </View>
 
-      <ScrollView
-        style={styles.content}
-        contentContainerStyle={styles.contentContainer}
-      >
-        {renderReport()}
+            <Text
+              style={{
+                fontSize: 14,
+                color: "#666",
+                lineHeight: 20,
+                marginBottom: 16,
+              }}
+            >
+              오늘의 AI 분석이 완료되었습니다.{"\n"}
+              내일 자정 이후에 다시 이용 가능해요.
+            </Text>
+
+            {/* 🆕 실시간 카운트다운 박스 */}
+            <View
+              style={{
+                backgroundColor: "#f8f9fa",
+                padding: 16,
+                borderRadius: 12,
+                borderLeftWidth: 4,
+                borderLeftColor: "#50cebb",
+                alignItems: "center",
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 12,
+                  color: "#666",
+                  marginBottom: 4,
+                }}
+              >
+                다음 이용까지
+              </Text>
+              <Text
+                style={{
+                  fontSize: 18,
+                  fontWeight: "700",
+                  color: "#50cebb",
+                  letterSpacing: 1,
+                }}
+              >
+                {timeRemaining || "계산 중..."}
+              </Text>
+            </View>
+          </View>
+        ) : (
+          /* 분석 가능 상태일 때는 입력창 표시 */
+          <View style={{ width: "100%" }}>
+            <Text
+              style={{
+                fontSize: 16,
+                fontWeight: "600",
+                color: "#1a1a1a",
+                marginBottom: 16,
+                textAlign: "center",
+              }}
+            >
+              오늘의 고민이나 궁금한 점을 알려주세요
+            </Text>
+            <TextInput
+              style={{
+                borderWidth: 2,
+                borderColor: analysisInput.trim() ? "#50cebb" : "#e0e0e0",
+                borderRadius: 16,
+                padding: 20,
+                fontSize: 16,
+                backgroundColor: "#ffffff",
+                minHeight: 120,
+                textAlignVertical: "top",
+                shadowColor: "#000",
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.05,
+                shadowRadius: 8,
+                elevation: 2,
+              }}
+              value={analysisInput}
+              onChangeText={setAnalysisInput}
+              placeholder="예: 토익 공부가 잘 안돼요. 집중력을 높이는 방법이 있을까요?"
+              placeholderTextColor="#aaa"
+              multiline
+              editable={!isAnalyzing}
+              onFocus={() => {
+                setTimeout(() => {
+                  if (inputScrollViewRef.current) {
+                    inputScrollViewRef.current.scrollToEnd({ animated: true });
+                  }
+                }, 100);
+              }}
+            />
+          </View>
+        )}
       </ScrollView>
-    </SafeAreaView>
+    </KeyboardAvoidingView>
+  );
+
+  // AI 분석 화면
+  const renderAnalysisScreen = () => (
+    <View style={{ flex: 1, position: "relative" }}>
+      {/* 메인 콘텐츠 - 애니메이션 적용 */}
+      <Animated.View
+        style={[
+          { flex: 1 },
+          {
+            transform: [
+              {
+                translateX: slideAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0, -400],
+                }),
+              },
+            ],
+          },
+        ]}
+      >
+        {analysisResult ? (
+          renderAnalysisResultView()
+        ) : (
+          <View
+            style={{
+              flex: 1,
+              justifyContent: "center",
+              alignItems: "center",
+              paddingHorizontal: 32,
+            }}
+          >
+            <View style={{ alignItems: "center", marginBottom: 40 }}>
+              <Ionicons
+                name="analytics-outline"
+                size={64}
+                color="#50cebb"
+                style={{ marginBottom: 20 }}
+              />
+              <Text
+                style={{
+                  fontSize: 24,
+                  fontWeight: "bold",
+                  color: "#333",
+                  marginBottom: 12,
+                  textAlign: "center",
+                }}
+              >
+                AI 분석 준비 완료
+              </Text>
+              <Text
+                style={{
+                  fontSize: 16,
+                  color: "#666",
+                  textAlign: "center",
+                  lineHeight: 24,
+                }}
+              >
+                우측 상단 버튼을 눌러{"\n"}
+                AI 분석을 시작해보세요
+              </Text>
+            </View>
+          </View>
+        )}
+      </Animated.View>
+
+      {/* 입력 화면 - 오버레이 */}
+      <Animated.View
+        style={[
+          {
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "#fafbfc",
+          },
+          {
+            transform: [
+              {
+                translateX: slideAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [400, 0],
+                }),
+              },
+            ],
+          },
+        ]}
+      >
+        {renderAnalysisInputView()}
+      </Animated.View>
+
+      {/* 플로팅 액션 버튼 - 우측 상단 */}
+      <TouchableOpacity
+        style={{
+          position: "absolute",
+          top: 8,
+          right: 20,
+          paddingHorizontal: 16,
+          paddingVertical: 12,
+          borderRadius: 20,
+          backgroundColor: isInputMode ? "#ff6b6b" : "#50cebb",
+          justifyContent: "center",
+          alignItems: "center",
+          shadowColor: "#000",
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.3,
+          shadowRadius: 8,
+          elevation: 8,
+          zIndex: 1000,
+          minWidth: 80,
+        }}
+        onPress={toggleInputMode}
+      >
+        <Text
+          style={{
+            color: "#fff",
+            fontSize: 13,
+            fontWeight: "600",
+            textAlign: "center",
+          }}
+        >
+          {isInputMode ? "분석결과" : "AI분석"}
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  // 🆕 개선된 hasAnalysisToday 함수
+  const hasAnalysisToday = async () => {
+    try {
+      const today = format(new Date(), "yyyy-MM-dd");
+      const recentResults = await getRecentAnalysisResults(1);
+      const todayAnalysis = recentResults.some(
+        (result) => result.date === today
+      );
+
+      console.log(
+        `📊 오늘(${today}) 분석 여부 체크:`,
+        todayAnalysis ? "분석완료" : "분석가능"
+      );
+      return todayAnalysis;
+    } catch (error) {
+      console.error("오늘 분석 확인 오류:", error);
+      return false;
+    }
+  };
+
+  return (
+    <View style={{ flex: 1, backgroundColor: "#ffffff" }}>
+      <StatusBar style="dark" backgroundColor="#ffffff" translucent={false} />
+
+      <SafeAreaView
+        style={{
+          flex: 1,
+          paddingTop: Platform.OS === "android" ? 35 : 0,
+        }}
+      >
+        {isStarted && (
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              paddingHorizontal: 16,
+              paddingVertical: 12,
+              borderBottomWidth: 1,
+              borderBottomColor: "#eee",
+            }}
+          >
+            <Ionicons name="sparkles" size={24} color="#50cebb" />
+            <Text
+              style={{
+                fontSize: 18,
+                fontWeight: "600",
+                color: "#333",
+                marginLeft: 8,
+                flex: 1,
+              }}
+            >
+              {isCollectingProfile
+                ? "AI 코치 설정 중..."
+                : showAnalysisScreen && userContext
+                ? `${userContext.name}님의 AI 분석`
+                : userContext
+                ? `${userContext.name}님의 AI 코치`
+                : "AI 맞춤 피드백"}
+            </Text>
+
+            {userContext && !isCollectingProfile && (
+              <TouchableOpacity
+                style={{
+                  marginRight: 8,
+                  padding: 8,
+                  borderRadius: 20,
+                  backgroundColor: "#f8f9fa",
+                }}
+                onPress={() => setShowProfileScreen(true)}
+              >
+                <Ionicons name="settings-outline" size={20} color="#666" />
+              </TouchableOpacity>
+            )}
+
+            {userContext && showAnalysisScreen && (
+              <Text style={{ fontSize: 12, color: "#999" }}>
+                {hasAnalyzedToday ? "사용완료" : "AI 분석"}
+              </Text>
+            )}
+          </View>
+        )}
+
+        {!isStarted
+          ? renderStartScreen()
+          : showProfileScreen
+          ? renderProfileScreen()
+          : isCollectingProfile
+          ? renderProfileSetupScreen()
+          : showAnalysisScreen
+          ? renderAnalysisScreen()
+          : null}
+      </SafeAreaView>
+    </View>
   );
 };
 

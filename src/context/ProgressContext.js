@@ -1,20 +1,16 @@
 // src/context/ProgressContext.js
-import React, { createContext, useState, useContext, useEffect } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { createContext, useContext, useEffect, useState } from "react";
 import { ToastEventSystem } from "../components/common/AutoToast";
 import { savePointHistory } from "../utils/pointHistoryManager";
 
 // dailybadge.js에서 가져온 상수 및 함수
 import {
-  BADGES,
   BADGE_RARITY,
-  TITLES,
-  SEASONS,
-  getRequiredXP,
-  getTaskXP,
-  timeToMinutes,
   enhanceBadgeSystem,
   enhanceTitleSystem,
+  getRequiredXP,
+  getTaskXP,
 } from "../components/dailybadge";
 
 // 상수 정의
@@ -31,7 +27,9 @@ const COMPLETED_TASKS_KEY = "@completed_tasks_count";
 const MORNING_TASKS_KEY = "@morning_tasks_count";
 const EVENING_TASKS_KEY = "@evening_tasks_count";
 const PERFECT_DAYS_KEY = "@perfect_days_count";
-const ATTENDANCE_DATA_KEY = "@attendance_data"; // 출석 기록 저장 키
+const ATTENDANCE_DATA_KEY = "@attendance_data";
+const COMPLETED_TASK_IDS_KEY = "@completed_task_ids"; // 완료된 태스크 ID 추적
+const TASK_REWARDS_KEY = "@task_rewards"; // 일정별 보상 기록
 
 // 모든 가능한 배지 (기본 + 확장)
 const ALL_BADGES = enhanceBadgeSystem();
@@ -41,19 +39,19 @@ const ALL_TITLES = enhanceTitleSystem();
 
 // 슬롯 가격 설정
 export const SLOT_PRICES = {
-  2: 100, // 두 번째 슬롯 가격
-  3: 250, // 세 번째 슬롯 가격
-  4: 500, // 네 번째 슬롯 가격
-  5: 1000, // 다섯 번째 슬롯 가격
+  2: 100,
+  3: 250,
+  4: 500,
+  5: 1000,
 };
 
 // 연속 출석 보상 설정
 export const STREAK_REWARDS = {
-  1: { points: 5, xp: 10 }, // 기본 출석 보상
-  3: { points: 15, xp: 30 }, // 3일 연속 보너스
-  7: { points: 30, xp: 70 }, // 7일 연속 보너스
-  14: { points: 60, xp: 150 }, // 14일 연속 보너스
-  30: { points: 100, xp: 300 }, // 30일 연속 보너스
+  1: { points: 5, xp: 10 },
+  3: { points: 15, xp: 30 },
+  7: { points: 30, xp: 70 },
+  14: { points: 60, xp: 150 },
+  30: { points: 100, xp: 300 },
 };
 
 // 컨텍스트 생성
@@ -67,20 +65,25 @@ export const ProgressProvider = ({ children }) => {
   const [level, setLevel] = useState(1);
   const [streak, setStreak] = useState(0);
   const [lastCheckDate, setLastCheckDate] = useState(null);
-  const [ddaySlots, setDdaySlots] = useState(1); // 기본 1개 슬롯
+  const [ddaySlots, setDdaySlots] = useState(1);
   const [checkedToday, setCheckedToday] = useState(false);
   const [earnedBadges, setEarnedBadges] = useState([]);
-  const [activeTitle, setActiveTitle] = useState("beginner"); // 기본 타이틀
+  const [activeTitle, setActiveTitle] = useState("beginner");
   const [completedTasks, setCompletedTasks] = useState(0);
   const [morningTasks, setMorningTasks] = useState(0);
   const [eveningTasks, setEveningTasks] = useState(0);
   const [perfectDays, setPerfectDays] = useState(0);
   const [loading, setLoading] = useState(true);
   const [recentUnlocks, setRecentUnlocks] = useState([]);
-  const [unusedDDaySlots, setUnusedDDaySlots] = useState(0); // 초기값 1 (최초 1개 무료 제공)
+  const [unusedDDaySlots, setUnusedDDaySlots] = useState(0);
   const [dailyMissions, setDailyMissions] = useState([]);
   const [weeklyMissions, setWeeklyMissions] = useState([]);
   const [attendanceData, setAttendanceData] = useState({});
+  const [completedTaskIds, setCompletedTaskIds] = useState(new Set()); // 완료된 태스크 ID 추적
+  const [taskRewards, setTaskRewards] = useState({}); // { [task.id]: { points, xp } }
+
+  // 🔥 레벨업 처리 중복 방지 플래그
+  const [isLevelingUp, setIsLevelingUp] = useState(false);
 
   // 초기 데이터 로드
   useEffect(() => {
@@ -100,9 +103,10 @@ export const ProgressProvider = ({ children }) => {
           morningTasksData,
           eveningTasksData,
           perfectDaysData,
-          dailyMissionsData, // 추가
-          weeklyMissionsData, // 추가
+          dailyMissionsData,
+          weeklyMissionsData,
           attendanceDataStr,
+          completedTaskIdsData,
         ] = await Promise.all([
           AsyncStorage.getItem(POINTS_STORAGE_KEY),
           AsyncStorage.getItem(XP_STORAGE_KEY),
@@ -117,18 +121,26 @@ export const ProgressProvider = ({ children }) => {
           AsyncStorage.getItem(MORNING_TASKS_KEY),
           AsyncStorage.getItem(EVENING_TASKS_KEY),
           AsyncStorage.getItem(PERFECT_DAYS_KEY),
-          AsyncStorage.getItem("DAILY_MISSIONS_KEY"), // 추가
-          AsyncStorage.getItem("WEEKLY_MISSIONS_KEY"), // 추가
+          AsyncStorage.getItem("DAILY_MISSIONS_KEY"),
+          AsyncStorage.getItem("WEEKLY_MISSIONS_KEY"),
           AsyncStorage.getItem(ATTENDANCE_DATA_KEY),
+          AsyncStorage.getItem(COMPLETED_TASK_IDS_KEY),
         ]);
+
+        // 출석 데이터 설정
         if (attendanceDataStr) {
           setAttendanceData(JSON.parse(attendanceDataStr));
         }
+
+        // 완료된 태스크 ID 설정
+        if (completedTaskIdsData) {
+          setCompletedTaskIds(new Set(JSON.parse(completedTaskIdsData)));
+        }
+
         // 포인트 설정
         if (pointsData) {
           setPoints(parseInt(pointsData));
         } else {
-          // 첫 사용자에게 시작 포인트 제공
           setPoints(50);
           await AsyncStorage.setItem(POINTS_STORAGE_KEY, "50");
         }
@@ -163,13 +175,15 @@ export const ProgressProvider = ({ children }) => {
         if (slotsData) {
           setDdaySlots(parseInt(slotsData));
         } else {
-          // 기본 1개 슬롯 설정
           await AsyncStorage.setItem(DDAY_SLOTS_KEY, "1");
         }
 
-        // 오늘 체크인 여부
+        // 오늘 체크인 여부 - YYYY-MM-DD 형식으로 비교
         if (checkedData) {
-          const today = new Date().toDateString();
+          const now = new Date();
+          const today = `${now.getFullYear()}-${String(
+            now.getMonth() + 1
+          ).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
           setCheckedToday(checkedData === today);
         }
 
@@ -177,7 +191,6 @@ export const ProgressProvider = ({ children }) => {
         if (badgesData) {
           setEarnedBadges(JSON.parse(badgesData));
         } else {
-          // 기본 배지 (첫 시작)
           const defaultBadges = ["level_1"];
           setEarnedBadges(defaultBadges);
           await AsyncStorage.setItem(
@@ -190,7 +203,6 @@ export const ProgressProvider = ({ children }) => {
         if (dailyMissionsData) {
           setDailyMissions(JSON.parse(dailyMissionsData));
         } else {
-          // 초기 일일 미션 설정
           await resetDailyMissions();
         }
 
@@ -198,7 +210,6 @@ export const ProgressProvider = ({ children }) => {
         if (weeklyMissionsData) {
           setWeeklyMissions(JSON.parse(weeklyMissionsData));
         } else {
-          // 초기 주간 미션 설정
           await resetWeeklyMissions();
         }
 
@@ -206,7 +217,6 @@ export const ProgressProvider = ({ children }) => {
         if (titleData) {
           setActiveTitle(titleData);
         } else {
-          // 기본 타이틀 (초보 계획자)
           await AsyncStorage.setItem(ACTIVE_TITLE_KEY, "beginner");
         }
 
@@ -229,6 +239,8 @@ export const ProgressProvider = ({ children }) => {
         if (perfectDaysData) {
           setPerfectDays(parseInt(perfectDaysData));
         }
+        const taskRewStr = await AsyncStorage.getItem(TASK_REWARDS_KEY);
+        if (taskRewStr) setTaskRewards(JSON.parse(taskRewStr));
 
         setLoading(false);
       } catch (error) {
@@ -240,32 +252,58 @@ export const ProgressProvider = ({ children }) => {
     loadData();
   }, []);
 
+  // 완료된 태스크 ID 저장 함수
+  const saveCompletedTaskIds = async (taskIds) => {
+    try {
+      await AsyncStorage.setItem(
+        COMPLETED_TASK_IDS_KEY,
+        JSON.stringify(Array.from(taskIds))
+      );
+    } catch (error) {
+      console.error("완료된 태스크 ID 저장 오류:", error);
+    }
+  };
+
+  // 태스크 고유 ID 생성 함수
+  const generateTaskId = (task) => {
+    // task.id가 있으면 그것을 사용하고, 없으면 날짜_제목_시간 형태로 생성
+    if (task.id) {
+      return task.id;
+    }
+    const today = new Date().toISOString().split("T")[0];
+    return `${today}_${task.task || "unknown"}_${task.startTime || "unknown"}`;
+  };
+
+  // 🔥 긴급 수정: completedTaskIds 강제 초기화 함수
+  const clearCompletedTaskIds = async () => {
+    setCompletedTaskIds(new Set());
+    await AsyncStorage.removeItem(COMPLETED_TASK_IDS_KEY);
+  };
+
   const checkAttendance = async () => {
     try {
-      // 로컬 시간 기준으로 오늘 날짜 계산
+      // 🔥 출석 체크 시작 로그
+      if (__DEV__) {
+        console.log("[출석체크] 출석체크 시작");
+      }
+
       const today = formatDateStr(new Date());
 
-      // 이미 오늘 체크했는지 확인
       if (checkedToday) {
         ToastEventSystem.showToast("이미 오늘은 출석체크를 했습니다", 2000);
         return false;
       }
 
-      // 출석 기록 유효성 검증
       const validAttendanceData =
         typeof attendanceData === "object" ? attendanceData : {};
 
-      // 출석 기록 업데이트
       const newAttendanceData = { ...validAttendanceData, [today]: true };
 
       try {
-        // 데이터 저장 먼저 수행 (상태 업데이트 전)
         await AsyncStorage.setItem(
           ATTENDANCE_DATA_KEY,
           JSON.stringify(newAttendanceData)
         );
-
-        // 저장 성공 후 상태 업데이트
         setAttendanceData(newAttendanceData);
       } catch (storageError) {
         console.error("출석 데이터 저장 오류:", storageError);
@@ -276,71 +314,75 @@ export const ProgressProvider = ({ children }) => {
         return false;
       }
 
-      // 연속 출석 계산 - 안전한 로직으로 처리
       let newStreak = 0;
       try {
         newStreak = calculateStreak(newAttendanceData);
-
-        // 스트릭 값 저장
         await AsyncStorage.setItem(STREAK_STORAGE_KEY, newStreak.toString());
         setStreak(newStreak);
       } catch (streakError) {
         console.error("스트릭 계산 오류:", streakError);
-        // 오류가 발생해도 기본값 사용하여 진행
         newStreak = streak + 1;
       }
 
       try {
-        // 오늘 날짜 저장
         await AsyncStorage.setItem(LAST_CHECK_DATE_KEY, today);
         setLastCheckDate(today);
-
-        // 오늘 체크 표시
         await AsyncStorage.setItem(CHECKED_TODAY_KEY, today);
         setCheckedToday(true);
       } catch (dateError) {
         console.error("날짜 데이터 저장 오류:", dateError);
-        // 중요 단계이므로 오류 시 사용자에게 알림
         ToastEventSystem.showToast(
           "출석 정보 저장 중 오류가 발생했습니다",
           2000
         );
       }
 
-      // 보상 계산
-      let reward = STREAK_REWARDS[1] || { points: 5, xp: 10 }; // 안전한 기본값 제공
+      let reward = STREAK_REWARDS[1] || { points: 5, xp: 10 };
 
-      // 특별 보상 마일스톤 체크
       if (STREAK_REWARDS[newStreak]) {
         reward = STREAK_REWARDS[newStreak];
       }
 
       try {
-        // 포인트 및 XP 추가
-        await addPoints(reward.points, `${newStreak}일 연속 출석`);
+        const actualPoints = await addPoints(
+          reward.points,
+          `${newStreak}일 연속 출석`,
+          "attendance",
+          {
+            streakDays: newStreak,
+            isMilestone: STREAK_REWARDS[newStreak] ? true : false,
+          }
+        );
         await addXP(reward.xp, `${newStreak}일 연속 출석`);
 
-        // 출석 체크 미션 업데이트
         await checkMissionProgress("attendance_check", {
           currentStreak: newStreak,
         });
 
-        // 연속 출석 배지 확인
         await checkStreakBadges(newStreak);
+
+        // 🔥 출석 체크 토스트 (단순화)
+        const message = `🔥 ${newStreak}일 연속 출석! +${actualPoints}P, +${reward.xp}XP 적립`;
+        ToastEventSystem.showToast(message, 3000);
+
+        // 추가: 디버그용 콘솔 출력
+        if (__DEV__) {
+          console.log(
+            `[출석체크] ${newStreak}일 연속, +${actualPoints}P, +${reward.xp}XP`
+          );
+        }
       } catch (rewardError) {
         console.error("보상 처리 오류:", rewardError);
-        // 보상 처리 실패해도 출석은 인정
+        // 🔥 에러 발생 시에도 기본 출석 성공 메시지
+        ToastEventSystem.showToast(
+          "출석체크 완료! 보상 처리 중 문제가 발생했습니다.",
+          2000
+        );
       }
-
-      ToastEventSystem.showToast(
-        `${newStreak}일 연속 출석! ${reward.points}P, ${reward.xp}XP 획득`,
-        3000
-      );
 
       return true;
     } catch (error) {
       console.error("출석 체크 오류:", error);
-      // 사용자에게 일반적인 오류 메시지 표시
       ToastEventSystem.showToast(
         "출석 체크 중 오류가 발생했습니다. 다시 시도해주세요.",
         3000
@@ -349,7 +391,6 @@ export const ProgressProvider = ({ children }) => {
     }
   };
 
-  // 날짜 유틸리티 함수 - 로컬 타임존 기반 포맷팅
   const formatDateStr = (date) => {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -357,42 +398,35 @@ export const ProgressProvider = ({ children }) => {
     return `${year}-${month}-${day}`;
   };
 
-  // 연속 출석 계산 함수 개선 - 안전성 및 오류 처리 강화
   const calculateStreak = (data) => {
     if (!data || typeof data !== "object") {
       console.warn("calculateStreak: 유효하지 않은 데이터 형식", data);
-      return 0; // 유효하지 않은 데이터일 경우 0 반환
+      return 0;
     }
 
-    // 로컬 시간 기준으로 날짜 계산 (타임존 문제 해결)
     const now = new Date();
     const today = formatDateStr(now);
 
-    // 오늘 체크했으면 1부터 시작
     let currentStreak = data[today] === true ? 1 : 0;
 
     if (currentStreak === 0) {
-      return 0; // 오늘 출석하지 않았으면 연속 출석 없음
+      return 0;
     }
 
-    // 안전한 날짜 계산을 위한 변수들
-    const MAX_DAYS_TO_CHECK = 366; // 무한 루프 방지용 최대 검사 일수
+    const MAX_DAYS_TO_CHECK = 366;
     let daysChecked = 0;
 
-    // 어제부터 거슬러 올라가며 연속된 출석 체크
     const checkDate = new Date(now);
-    checkDate.setDate(checkDate.getDate() - 1); // 어제부터 시작
+    checkDate.setDate(checkDate.getDate() - 1);
 
     while (daysChecked < MAX_DAYS_TO_CHECK) {
-      // 체크할 날짜 문자열 형식으로 변환
       const checkDateStr = formatDateStr(checkDate);
 
-      // 해당 날짜에 출석 기록이 정확히 true인지 확인
       if (data[checkDateStr] === true) {
         currentStreak++;
-        checkDate.setDate(checkDate.getDate() - 1); // 하루 전으로 이동
+        checkDate.setDate(checkDate.getDate() - 1);
       } else {
-        break; // 연속 출석이 끊김
+        break;
       }
 
       daysChecked++;
@@ -401,13 +435,10 @@ export const ProgressProvider = ({ children }) => {
     return currentStreak;
   };
 
-  // 미션 초기화 함수 (매일/매주 실행)
   const resetDailyMissions = async () => {
-    // 기본 일일 미션 정의
     const defaultDailyMissions = [
       {
         id: "morning_task",
-
         title: "아침형 인간",
         description: "오전 9시 전에 일정 1개 이상 완료하기",
         reward: { points: 15, xp: 20 },
@@ -441,7 +472,6 @@ export const ProgressProvider = ({ children }) => {
       },
     ];
 
-    // 미션 상태 초기화 및 저장
     setDailyMissions(defaultDailyMissions);
     try {
       await AsyncStorage.setItem(
@@ -454,7 +484,6 @@ export const ProgressProvider = ({ children }) => {
   };
 
   const resetWeeklyMissions = async () => {
-    // 기본 주간 미션 정의
     const defaultWeeklyMissions = [
       {
         id: "weekly_streak",
@@ -477,7 +506,7 @@ export const ProgressProvider = ({ children }) => {
         claimed: false,
         progress: 0,
         total: 5,
-        categories: [], // 완료한 카테고리 추적
+        categories: [],
       },
       {
         id: "perfect_days",
@@ -492,7 +521,6 @@ export const ProgressProvider = ({ children }) => {
       },
     ];
 
-    // 미션 상태 초기화 및 저장
     setWeeklyMissions(defaultWeeklyMissions);
     try {
       await AsyncStorage.setItem(
@@ -504,24 +532,19 @@ export const ProgressProvider = ({ children }) => {
     }
   };
 
-  // 미션 완료 체크 함수
   const checkMissionProgress = async (activityType, data = {}) => {
-    // 활동 유형에 따라 관련 미션 진행도 업데이트
     let dailyUpdated = false;
     let weeklyUpdated = false;
 
-    // 임시 미션 상태 복사
     const updatedDailyMissions = [...dailyMissions];
     const updatedWeeklyMissions = [...weeklyMissions];
 
     switch (activityType) {
       case "task_complete":
-        // 일정 완료 관련 미션 업데이트
         const { taskTime, category } = data;
         const now = new Date();
         const hour = now.getHours();
 
-        // 아침 일정 체크 (오전 9시 이전)
         if (hour < 9) {
           const morningMission = updatedDailyMissions.find(
             (m) => m.id === "morning_task"
@@ -535,7 +558,6 @@ export const ProgressProvider = ({ children }) => {
           }
         }
 
-        // 3개 일정 완료 체크
         const tripleMission = updatedDailyMissions.find(
           (m) => m.id === "triple_complete"
         );
@@ -553,7 +575,6 @@ export const ProgressProvider = ({ children }) => {
           dailyUpdated = true;
         }
 
-        // 다양한 카테고리 체크 (주간 미션)
         if (category) {
           const varietyMission = updatedWeeklyMissions.find(
             (m) => m.id === "category_variety"
@@ -580,12 +601,10 @@ export const ProgressProvider = ({ children }) => {
         break;
 
       case "attendance_check":
-        // 연속 출석 관련 미션 업데이트
         const streakMission = updatedWeeklyMissions.find(
           (m) => m.id === "weekly_streak"
         );
         if (streakMission) {
-          // 현재 streak 상태 반영
           const currentStreak = data.currentStreak || 0;
           streakMission.progress = Math.min(currentStreak, streakMission.total);
 
@@ -600,7 +619,6 @@ export const ProgressProvider = ({ children }) => {
         break;
 
       case "perfect_day":
-        // 하루 완벽 달성 미션 업데이트
         const perfectDaysMission = updatedWeeklyMissions.find(
           (m) => m.id === "perfect_days"
         );
@@ -617,17 +635,13 @@ export const ProgressProvider = ({ children }) => {
         break;
 
       case "add_task":
-        // 일정 추가 관련 미션 업데이트
         const { taskDate } = data;
         const currentHour = new Date().getHours();
 
-        // 저녁에 내일 일정 추가 체크
         if (currentHour >= 20) {
-          // 저녁 8시 이후
           const tomorrowDate = new Date();
           tomorrowDate.setDate(tomorrowDate.getDate() + 1);
 
-          // 내일 날짜에 추가된 일정인지 확인
           if (
             taskDate &&
             new Date(taskDate).getDate() === tomorrowDate.getDate()
@@ -650,7 +664,6 @@ export const ProgressProvider = ({ children }) => {
         break;
     }
 
-    // 상태 업데이트가 있을 경우에만 저장
     if (dailyUpdated) {
       setDailyMissions(updatedDailyMissions);
       try {
@@ -676,28 +689,30 @@ export const ProgressProvider = ({ children }) => {
     }
   };
 
-  // 미션 보상 획득 함수
   const claimMissionReward = async (missionId) => {
-    // 일일 미션 확인
     let mission = dailyMissions.find((m) => m.id === missionId);
     let isMissionDaily = true;
 
-    // 주간 미션 확인
     if (!mission) {
       mission = weeklyMissions.find((m) => m.id === missionId);
       isMissionDaily = false;
     }
 
-    // 미션이 없거나 이미 완료했거나 보상을 받았으면 중단
     if (!mission || !mission.completed || mission.claimed) {
       return false;
     }
 
-    // 보상 지급
-    await addPoints(mission.reward.points, `미션 보상: ${mission.title}`);
+    await addPoints(
+      mission.reward.points,
+      `미션 보상: ${mission.title}`,
+      "mission",
+      {
+        missionId: mission.id,
+        isDaily: isMissionDaily,
+      }
+    );
     await addXP(mission.reward.xp, `미션 보상: ${mission.title}`);
 
-    // 미션 상태 업데이트
     if (isMissionDaily) {
       const updatedDailyMissions = dailyMissions.map((m) =>
         m.id === missionId ? { ...m, claimed: true } : m
@@ -730,33 +745,24 @@ export const ProgressProvider = ({ children }) => {
       }
     }
 
-    // 모든 미션 완료 시 추가 보너스 확인
     checkAllMissionsComplete();
-
     return true;
   };
 
-  // 모든 미션 완료 확인 및 보너스 지급
   const checkAllMissionsComplete = async () => {
-    // 일일 미션 모두 완료 및 보상 획득 확인
     const allDailyCompleted = dailyMissions.every((m) => m.claimed);
     const allDailyClaimedKey = `DAILY_ALL_CLAIMED_${
       new Date().toISOString().split("T")[0]
     }`;
 
-    // 이미 보너스를 받았는지 확인
     const alreadyClaimed = await AsyncStorage.getItem(allDailyClaimedKey);
 
     if (allDailyCompleted && !alreadyClaimed) {
-      // 추가 보너스 지급
-      await addPoints(25, "일일 미션 올 클리어 보너스");
+      await addPoints(25, "일일 미션 올 클리어 보너스", "mission_bonus");
       await addXP(35, "일일 미션 올 클리어 보너스");
-
-      // 보너스 지급 기록
       await AsyncStorage.setItem(allDailyClaimedKey, "true");
     }
 
-    // 주간 미션 모두 완료 및 보상 획득 확인
     const allWeeklyCompleted = weeklyMissions.every((m) => m.claimed);
     const currentWeek = getWeekNumber(new Date());
     const allWeeklyClaimedKey = `WEEKLY_ALL_CLAIMED_${currentWeek}`;
@@ -766,197 +772,231 @@ export const ProgressProvider = ({ children }) => {
     );
 
     if (allWeeklyCompleted && !weeklyAlreadyClaimed) {
-      // 추가 보너스 지급
-      await addPoints(100, "주간 미션 올 클리어 보너스");
+      await addPoints(100, "주간 미션 올 클리어 보너스", "mission_bonus");
       await addXP(150, "주간 미션 올 클리어 보너스");
-
-      // 보너스 지급 기록
       await AsyncStorage.setItem(allWeeklyClaimedKey, "true");
     }
   };
 
-  // 주 번호 계산 헬퍼 함수
   const getWeekNumber = (date) => {
     const firstDayOfYear = new Date(date.getFullYear(), 0, 1);
     const pastDaysOfYear = (date - firstDayOfYear) / 86400000;
     return Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
   };
 
-  // XP 추가 및 레벨업 확인 함수
+  // 🔥 수정된 addXP 함수 - 레벨업 무한루프 방지
   const addXP = async (amount, reason = "") => {
     try {
-      const newXP = xp + amount;
-      setXp(newXP);
-      await AsyncStorage.setItem(XP_STORAGE_KEY, newXP.toString());
+      if (amount === 0) return true;
 
-      // 레벨업 확인
+      // 🔥 레벨업 처리 중이면 XP 추가 대기
+      if (isLevelingUp) {
+        if (__DEV__) {
+          console.log(`[addXP] 레벨업 처리 중이므로 XP 추가 대기: ${amount}XP`);
+        }
+        return true;
+      }
+
+      const nextXP = Math.max(0, xp + amount);
+      setXp(nextXP);
+      await AsyncStorage.setItem(XP_STORAGE_KEY, nextXP.toString());
+
+      // 🔥 레벨업 체크
       const requiredXP = getRequiredXP(level);
-      if (newXP >= requiredXP) {
-        const newLevel = level + 1;
-        setLevel(newLevel);
-        await AsyncStorage.setItem(LEVEL_STORAGE_KEY, newLevel.toString());
+      if (nextXP >= requiredXP) {
+        // 🔥 레벨업 처리 시작 플래그 설정
+        setIsLevelingUp(true);
 
-        // 레벨업 보상 포인트
-        const levelupPoints = newLevel * 20;
-        setPoints((prevPoints) => prevPoints + levelupPoints);
-        await AsyncStorage.setItem(
-          POINTS_STORAGE_KEY,
-          (points + levelupPoints).toString()
-        );
+        try {
+          const newLevel = level + 1;
+          setLevel(newLevel);
+          await AsyncStorage.setItem(LEVEL_STORAGE_KEY, newLevel.toString());
 
-        // 토스트 메시지로 알림
-        ToastEventSystem.showToast(
-          `레벨 업! 레벨 ${newLevel} 달성! ${levelupPoints} 포인트 획득!`,
-          3000
-        );
-
-        // 레벨 배지 확인
-        const levelBadgeId = `level_${newLevel}`;
-        if (
-          ALL_BADGES.some((badge) => badge.id === levelBadgeId) &&
-          !earnedBadges.includes(levelBadgeId)
-        ) {
-          await awardBadge(levelBadgeId);
-        }
-
-        // 마일스톤 배지 확인
-        const milestoneBadgeId = `milestone_level_${newLevel}`;
-        if (
-          ALL_BADGES.some((badge) => badge.id === milestoneBadgeId) &&
-          !earnedBadges.includes(milestoneBadgeId)
-        ) {
-          await awardBadge(milestoneBadgeId);
-        }
-
-        // 타이틀 확인
-        checkAndUnlockTitles();
-      } else {
-        // XP 획득 토스트
-        if (amount > 0) {
-          ToastEventSystem.showToast(
-            `${amount} XP 획득! ${reason && `(${reason})`}`,
-            2000
+          // 🔥 레벨업 포인트 보상 (XP 추가 없이)
+          const levelupPoints = newLevel * 20;
+          const actualLevelupPoints = await addPoints(
+            levelupPoints,
+            `레벨 ${newLevel} 달성`,
+            "levelup"
           );
+
+          // 🔥 레벨업 토스트 한 번만 표시
+          ToastEventSystem.showToast(
+            `🎉 레벨 ${newLevel} 달성! +${actualLevelupPoints}P 획득!`,
+            3000
+          );
+
+          // 🔥 레벨 배지 체크 (XP 보너스 없는 배지만)
+          const levelBadgeId = `level_${newLevel}`;
+          if (
+            ALL_BADGES.some((badge) => badge.id === levelBadgeId) &&
+            !earnedBadges.includes(levelBadgeId)
+          ) {
+            await awardBadgeWithoutXP(levelBadgeId);
+          }
+
+          const milestoneBadgeId = `milestone_level_${newLevel}`;
+          if (
+            ALL_BADGES.some((badge) => badge.id === milestoneBadgeId) &&
+            !earnedBadges.includes(milestoneBadgeId)
+          ) {
+            await awardBadgeWithoutXP(milestoneBadgeId);
+          }
+
+          checkAndUnlockTitles();
+        } finally {
+          // 🔥 레벨업 처리 완료 플래그 해제
+          setIsLevelingUp(false);
         }
       }
 
       return true;
     } catch (error) {
       console.error("XP 추가 오류:", error);
+      setIsLevelingUp(false); // 🔥 에러 시에도 플래그 해제
       return false;
     }
   };
 
-  // 동적 보상 계산 함수
+  // XP 차감 함수 추가
+  const deductXP = async (amount, reason = "") => {
+    try {
+      if (amount === 0) return true;
+      const finalAmount = Math.abs(amount);
+      const nextXP = Math.max(0, xp - finalAmount);
+      setXp(nextXP);
+      await AsyncStorage.setItem(XP_STORAGE_KEY, nextXP.toString());
+
+      if (__DEV__) {
+        console.log(
+          `[deductXP] ${finalAmount}XP 차감: ${reason} | 이전 XP: ${xp} → 새 XP: ${nextXP}`
+        );
+      }
+      return true;
+    } catch (error) {
+      console.error("XP 차감 오류:", error);
+      return false;
+    }
+  };
+
   const calculateDynamicReward = (baseReward, activityType) => {
     let multiplier = 1.0;
     const hour = new Date().getHours();
 
-    // 시간대별 보너스
     if (hour >= 5 && hour <= 8) {
-      // 아침 활동 보너스 (초기 활동 격려)
       multiplier += 0.3;
     } else if (hour >= 21 || hour <= 4) {
-      // 야간 활동 보너스
       multiplier += 0.2;
     }
 
-    // 요일별 보너스 (주말에는 더 많은 보상)
     const day = new Date().getDay();
     if (day === 0 || day === 6) {
       multiplier += 0.15;
     }
 
-    // 연속 활동에 따른 보너스
     if (streak > 3) {
-      // 3일 이상 연속 출석 시 추가 보너스
-      multiplier += Math.min(0.5, streak * 0.05); // 최대 50%까지 보너스
+      multiplier += Math.min(0.5, streak * 0.05);
     }
 
-    // 활동 유형별 특별 보너스 (가끔 랜덤한 보너스 제공)
     if (Math.random() < 0.15) {
-      // 15% 확률로 보너스 발생
       multiplier += 0.5;
-      // 사용자에게 보너스 알림 (ToastEventSystem 활용)
       ToastEventSystem.showToast("행운의 보너스! +50% 추가 포인트 획득!", 2000);
     }
 
     return Math.round(baseReward * multiplier);
   };
 
-  // nextSlotPrice 계산 로직 (기존 슬롯 수에 따라 가격이 증가)
   const calculateNextSlotPrice = () => {
-    // 기본 가격은 100포인트
     const basePrice = 100;
 
-    // 슬롯 수에 따라 가격 증가
-    // 첫 슬롯은 100, 두번째는 150, 세번째는 200, 네번째부터는 300씩 증가
-    if (ddaySlots <= 1) return basePrice; // 첫 번째 슬롯
-    if (ddaySlots === 2) return 150; // 두 번째 슬롯
-    if (ddaySlots === 3) return 200; // 세 번째 슬롯
-    return basePrice + (ddaySlots - 1) * 100; // 이후 슬롯
+    if (ddaySlots <= 1) return basePrice;
+    if (ddaySlots === 2) return 150;
+    if (ddaySlots === 3) return 200;
+    return basePrice + (ddaySlots - 1) * 100;
   };
 
-  // 계산된 다음 슬롯 가격
   const nextSlotPrice = calculateNextSlotPrice();
-  // 포인트 추가 함수
-  const addPoints = async (amount, reason = "") => {
-    if (amount > 0) {
-      // 획득하는 경우에만 동적 보상 적용
-      amount = calculateDynamicReward(amount, reason);
-    }
+
+  const addPoints = async (
+    amount,
+    reason = "",
+    category = "earn",
+    meta = {}
+  ) => {
+    // 🔥 모든 동적 보상 제거 - 고정 포인트만 사용
+    const finalAmount = amount;
+
     try {
-      const newPoints = points + amount;
+      // 🔥 현재 React state 값을 직접 사용 (AsyncStorage 경합 상태 방지)
+      const currentPoints = points;
+      const newPoints = currentPoints + finalAmount;
+
+      // 즉시 state 업데이트
       setPoints(newPoints);
+
+      // AsyncStorage 저장 (백그라운드)
       await AsyncStorage.setItem(POINTS_STORAGE_KEY, newPoints.toString());
 
-      // 토스트 메시지로 알림
-      if (amount > 0) {
-        ToastEventSystem.showToast(
-          `${amount} 포인트를 획득했습니다! ${reason && `(${reason})`}`,
-          2000
+      await savePointHistory({
+        type: "earn",
+        category,
+        amount: finalAmount,
+        description: reason,
+        meta,
+      });
+
+      // 🚀 개발 모드에서만 로깅
+      if (__DEV__) {
+        console.log(
+          `[addPoints] ${finalAmount}P 적립: ${reason} | 이전 포인트: ${currentPoints} → 새 포인트: ${newPoints}`
         );
       }
-
-      return true;
+      return finalAmount;
     } catch (error) {
       console.error("포인트 추가 오류:", error);
-      return false;
+      return 0;
     }
   };
 
   const deductPoints = async (
     rawAmount,
-    reason = "", // 예: "레어 색상 구매"
-    category = "spend", // 예: "color" | "dday" | "streak"
+    reason = "",
+    category = "spend",
     meta = {}
   ) => {
-    // ✅ 항상 양수 처리해서 호출 실수 방어
     const amount = Math.abs(rawAmount);
 
     try {
-      if (points < amount) {
+      // 🔥 현재 React state 값을 직접 사용 (AsyncStorage 경합 상태 방지)
+      const currentPoints = points;
+
+      if (currentPoints < amount) {
         ToastEventSystem.showToast("포인트가 부족합니다", 2000);
         return false;
       }
 
-      const newPoints = points - amount;
+      const newPoints = currentPoints - amount;
+
+      // 즉시 state 업데이트
       setPoints(newPoints);
+
+      // AsyncStorage 저장 (백그라운드)
       await AsyncStorage.setItem(POINTS_STORAGE_KEY, newPoints.toString());
 
-      // 히스토리 저장 – 한 번만 기록
       await savePointHistory({
         type: "spend",
         category,
-        amount: -amount, // 차감은 음수로 저장
+        amount: -amount,
         description: reason,
         meta,
       });
 
-      ToastEventSystem.showToast(
-        `${amount}P 사용했습니다${reason ? ` (${reason})` : ""}`,
-        2000
-      );
+      // 🚀 개발 모드에서만 로깅
+      if (__DEV__) {
+        console.log(
+          `[deductPoints] ${amount}P 차감: ${reason} | 이전 포인트: ${currentPoints} → 새 포인트: ${newPoints}`
+        );
+      }
       return true;
     } catch (err) {
       console.error("포인트 차감 오류:", err);
@@ -964,21 +1004,19 @@ export const ProgressProvider = ({ children }) => {
     }
   };
 
-  // 배지 획득 함수
-  const awardBadge = async (badgeId) => {
+  // 🔥 새로운 함수: XP 보너스 없이 배지 획득
+  const awardBadgeWithoutXP = async (badgeId) => {
     try {
       if (earnedBadges.includes(badgeId)) {
-        return false; // 이미 가지고 있는 배지
+        return false;
       }
 
-      // 배지 찾기
       const badge = ALL_BADGES.find((b) => b.id === badgeId);
       if (!badge) {
         console.error(`배지 ID: ${badgeId}를 찾을 수 없습니다`);
         return false;
       }
 
-      // 배지 획득
       const newEarnedBadges = [...earnedBadges, badgeId];
       setEarnedBadges(newEarnedBadges);
       await AsyncStorage.setItem(
@@ -986,12 +1024,11 @@ export const ProgressProvider = ({ children }) => {
         JSON.stringify(newEarnedBadges)
       );
 
-      // 배지 보상 XP 지급
-      if (badge.xpBonus) {
-        await addXP(badge.xpBonus, `${badge.name} 배지 획득`);
-      }
+      // 🔥 XP 보너스 제거 (무한루프 방지)
+      // if (badge.xpBonus) {
+      //   await addXP(badge.xpBonus, `${badge.name} 배지 획득`);
+      // }
 
-      // 새 업적 알림에 추가
       setRecentUnlocks((prev) => [
         ...prev,
         {
@@ -1004,10 +1041,7 @@ export const ProgressProvider = ({ children }) => {
         },
       ]);
 
-      // 토스트 메시지로 알림
       ToastEventSystem.showToast(`🏆 새 배지 획득: ${badge.name}!`, 3000);
-
-      // 타이틀 확인
       checkAndUnlockTitles();
 
       return true;
@@ -1017,26 +1051,68 @@ export const ProgressProvider = ({ children }) => {
     }
   };
 
-  // 타이틀 확인 및 잠금 해제 함수
+  // 🔥 기존 awardBadge 함수 (XP 보너스 있음, 레벨업 중이 아닐 때만)
+  const awardBadge = async (badgeId) => {
+    try {
+      if (earnedBadges.includes(badgeId)) {
+        return false;
+      }
+
+      const badge = ALL_BADGES.find((b) => b.id === badgeId);
+      if (!badge) {
+        console.error(`배지 ID: ${badgeId}를 찾을 수 없습니다`);
+        return false;
+      }
+
+      const newEarnedBadges = [...earnedBadges, badgeId];
+      setEarnedBadges(newEarnedBadges);
+      await AsyncStorage.setItem(
+        EARNED_BADGES_KEY,
+        JSON.stringify(newEarnedBadges)
+      );
+
+      // 🔥 레벨업 중이 아닐 때만 XP 보너스 지급
+      if (badge.xpBonus && !isLevelingUp) {
+        await addXP(badge.xpBonus, `${badge.name} 배지 획득`);
+      }
+
+      setRecentUnlocks((prev) => [
+        ...prev,
+        {
+          type: "badge",
+          id: badgeId,
+          name: badge.name,
+          icon: badge.icon,
+          description: badge.description,
+          rarity: badge.rarity?.name || "일반",
+        },
+      ]);
+
+      ToastEventSystem.showToast(`🏆 새 배지 획득: ${badge.name}!`, 3000);
+      checkAndUnlockTitles();
+
+      return true;
+    } catch (error) {
+      console.error("배지 획득 오류:", error);
+      return false;
+    }
+  };
+
   const checkAndUnlockTitles = async () => {
     try {
       let newTitlesUnlocked = false;
 
       for (const title of ALL_TITLES) {
-        // 이미 해금된 타이틀은 건너뛰기
         if (earnedBadges.includes(`title_${title.id}`)) {
           continue;
         }
 
-        // 요구사항 확인
         let meetsRequirements = true;
 
-        // 레벨 요구사항
         if (title.requirement.level && level < title.requirement.level) {
           meetsRequirements = false;
         }
 
-        // 배지 요구사항
         if (title.requirement.badges) {
           for (const requiredBadge of title.requirement.badges) {
             if (!earnedBadges.includes(requiredBadge)) {
@@ -1046,11 +1122,9 @@ export const ProgressProvider = ({ children }) => {
           }
         }
 
-        // 타이틀 해금
         if (meetsRequirements) {
           const titleBadgeId = `title_${title.id}`;
 
-          // 배지 목록에 타이틀 배지 추가
           const newEarnedBadges = [...earnedBadges, titleBadgeId];
           setEarnedBadges(newEarnedBadges);
           await AsyncStorage.setItem(
@@ -1058,10 +1132,8 @@ export const ProgressProvider = ({ children }) => {
             JSON.stringify(newEarnedBadges)
           );
 
-          // 타이틀 획득 알림
           ToastEventSystem.showToast(`🏅 새 타이틀 해금: ${title.name}!`, 3000);
 
-          // 새 업적 알림에 추가
           setRecentUnlocks((prev) => [
             ...prev,
             {
@@ -1083,10 +1155,8 @@ export const ProgressProvider = ({ children }) => {
     }
   };
 
-  // 활성 타이틀 설정 함수
   const setUserTitle = async (titleId) => {
     try {
-      // 해당 타이틀 소유 여부 확인
       if (!earnedBadges.includes(`title_${titleId}`)) {
         ToastEventSystem.showToast("해금되지 않은 타이틀입니다", 2000);
         return false;
@@ -1103,9 +1173,7 @@ export const ProgressProvider = ({ children }) => {
     }
   };
 
-  // 연속 출석 배지 확인
   const checkStreakBadges = async (currentStreak) => {
-    // 연속 출석 배지 목록
     const streakBadges = [
       { days: 3, id: "streak_3" },
       { days: 5, id: "streak_5" },
@@ -1119,7 +1187,6 @@ export const ProgressProvider = ({ children }) => {
       { days: 100, id: "streak_100" },
     ];
 
-    // 현재 연속 출석일에 맞는 배지 확인
     for (const badgeInfo of streakBadges) {
       if (currentStreak === badgeInfo.days) {
         await awardBadge(badgeInfo.id);
@@ -1128,24 +1195,29 @@ export const ProgressProvider = ({ children }) => {
     }
   };
 
-  // D-Day 슬롯 구매 함수
-  // 🔄 ProgressContext 내부 – D-Day 슬롯 구매 (리팩터)
+  const createUnlock = (unlockData) => {
+    setRecentUnlocks((prev) => [
+      ...prev,
+      {
+        ...unlockData,
+        id: Date.now(),
+      },
+    ]);
+  };
+
   const purchaseDDaySlot = async () => {
     try {
       console.log(
         `D-Day 슬롯 구매 시도: ${points}P 보유, ${nextSlotPrice}P 필요`
       );
 
-      // ✅ deductPoints 한 방으로 차감 + 히스토리(category="dday") 기록
       const ok = await deductPoints(nextSlotPrice, "D-Day 슬롯 구매", "dday");
-      if (!ok) return false; // 포인트 부족 등으로 실패 시 종료
+      if (!ok) return false;
 
-      // 사용 가능한 D-Day 슬롯 +1
       const newUnused = unusedDDaySlots + 1;
       setUnusedDDaySlots(newUnused);
       await AsyncStorage.setItem("@unused_dday_slots", newUnused.toString());
 
-      // 알림 생성
       createUnlock({
         type: "feature",
         name: "D-Day 슬롯 구매 완료!",
@@ -1163,12 +1235,10 @@ export const ProgressProvider = ({ children }) => {
 
   const handleGoalAdded = async () => {
     try {
-      // D-Day가 새로 추가되었을 때 사용 가능한 슬롯 감소
       if (unusedDDaySlots > 0) {
         const newUnusedSlots = unusedDDaySlots - 1;
         setUnusedDDaySlots(newUnusedSlots);
 
-        // 변경된 값 저장
         await AsyncStorage.setItem(
           "@unused_dday_slots",
           newUnusedSlots.toString()
@@ -1185,24 +1255,42 @@ export const ProgressProvider = ({ children }) => {
     }
   };
 
-  // 일정 완료 보상 함수 (확장)
-  const rewardTaskCompletion = async (task) => {
+  // 🔥 수정된 일정 완료 보상 함수 - UI 상태 기반으로 변경
+  const rewardTaskCompletion = async (task, isCompletedInUI = false) => {
     try {
-      // 기본 포인트 보상
-      let pointReward = 5;
+      // 태스크 고유 ID 생성
+      const taskId = generateTaskId(task);
 
-      // 기본 XP 보상
-      let xpReward = getTaskXP(task);
+      if (__DEV__) {
+        console.log(`태스크 완료 처리: ${taskId}`);
+        console.log(`UI 상태에서 완료됨: ${isCompletedInUI}`);
+      }
 
-      // 시간에 따른 보너스
-      const hour = parseInt(task.startTime.split(":")[0]);
-      if (hour < 7) pointReward += 3; // 이른 아침 보너스
-      if (hour >= 22) pointReward += 2; // 늦은 밤 보너스
+      // 🔥 UI 상태 기반 중복 체크 - 이미 UI에서 완료된 상태면 중복
+      if (isCompletedInUI) {
+        if (__DEV__) {
+          console.log(`이미 UI에서 완료된 태스크: ${taskId}`);
+        }
+        return { success: false }; // 중복 보상 방지
+      }
 
-      // 포인트 추가
-      await addPoints(pointReward, "일정 완료");
+      // 🔥 수정: 고정 포인트 보상 (5포인트)
+      const pointReward = 5;
+      const xpReward = getTaskXP(task);
 
-      // XP 추가
+      // 완료된 태스크 ID에 추가 (기록용)
+      const newCompletedTaskIds = new Set([...completedTaskIds, taskId]);
+      setCompletedTaskIds(newCompletedTaskIds);
+      await saveCompletedTaskIds(newCompletedTaskIds);
+
+      // 🔥 수정: 동적 보상 없이 고정 포인트 적용
+      const actualPoints = await addPoints(pointReward, "일정 완료", "task", {
+        taskId: taskId,
+        taskName: task.task || "Unknown",
+        startTime: task.startTime,
+        endTime: task.endTime || task.startTime,
+      });
+
       await addXP(xpReward, "일정 완료");
 
       // 완료한 일정 수 증가
@@ -1216,10 +1304,11 @@ export const ProgressProvider = ({ children }) => {
       await checkMissionProgress("task_complete", {
         taskTime: task.startTime,
         category: task.category,
-        todayCompleted: completedTasks + 1,
+        todayCompleted: newCompletedTasks,
       });
 
       // 시간대별 일정 카운트 업데이트
+      const hour = parseInt(task.startTime.split(":")[0]);
       if (hour < 12) {
         const newMorningTasks = morningTasks + 1;
         setMorningTasks(newMorningTasks);
@@ -1236,20 +1325,175 @@ export const ProgressProvider = ({ children }) => {
         );
       }
 
+      // ① 보상 지급 끝난 뒤
+      const newTaskRewards = {
+        ...taskRewards,
+        [taskId]: { points: actualPoints, xp: xpReward },
+      };
+      setTaskRewards(newTaskRewards);
+      await AsyncStorage.setItem(
+        TASK_REWARDS_KEY,
+        JSON.stringify(newTaskRewards)
+      );
+
       // 배지 확인
       await checkTaskCompletionBadges(newCompletedTasks);
       await checkTimeBasedBadges();
 
-      return true;
+      if (__DEV__) {
+        console.log(
+          `[rewardTaskCompletion] 완료: ${taskId} | 적립된 포인트: ${actualPoints}P`
+        );
+      }
+      return { success: true, points: actualPoints, xp: xpReward };
     } catch (error) {
       console.error("일정 완료 보상 오류:", error);
+      return { success: false };
+    }
+  };
+
+  // 🔙 일정 완료 취소 시 보상 회수
+  const revertTaskCompletion = async (task) => {
+    try {
+      const taskId = generateTaskId(task);
+      const reward = taskRewards[taskId];
+      if (!reward) return false; // 기록 없으면 아무 일도 안 함
+
+      // 포인트·XP 회수
+      await deductPoints(reward.points, "일정 완료 취소", "task_cancel", {
+        taskId: taskId,
+      });
+      await deductXP(reward.xp, "일정 완료 취소");
+
+      // 완료 카운트 감소
+      const newCompleted = Math.max(0, completedTasks - 1);
+      setCompletedTasks(newCompleted);
+      await AsyncStorage.setItem(COMPLETED_TASKS_KEY, newCompleted.toString());
+
+      // 시간대별 카운트도 역-처리
+      const hour = parseInt(task.startTime.split(":")[0], 10);
+      if (hour < 12 && morningTasks > 0) {
+        const nt = morningTasks - 1;
+        setMorningTasks(nt);
+        await AsyncStorage.setItem(MORNING_TASKS_KEY, nt.toString());
+      } else if (hour >= 18 && eveningTasks > 0) {
+        const nt = eveningTasks - 1;
+        setEveningTasks(nt);
+        await AsyncStorage.setItem(EVENING_TASKS_KEY, nt.toString());
+      }
+
+      // 기록 삭제
+      const { [taskId]: _, ...rest } = taskRewards;
+      setTaskRewards(rest);
+      await AsyncStorage.setItem(TASK_REWARDS_KEY, JSON.stringify(rest));
+
+      // 미션 진행도 재조정
+      await checkMissionProgress("task_complete", {
+        todayCompleted: newCompleted,
+        category: task.category,
+      });
+
+      return true;
+    } catch (err) {
+      console.error("보상 회수 오류:", err);
       return false;
     }
   };
 
-  // 완료한 일정 수에 따른 배지 확인
+  // 🔥 새로 추가된 일정 완료 취소 함수 - UI 상태 기반으로 변경
+  const undoTaskCompletion = async (task, isCompletedInUI = true) => {
+    try {
+      // 태스크 고유 ID 생성
+      const taskId = generateTaskId(task);
+
+      if (__DEV__) {
+        console.log(`태스크 취소 처리: ${taskId}`);
+        console.log(`UI 상태에서 완료됨: ${isCompletedInUI}`);
+      }
+
+      // 🔥 UI 상태 기반 완료 체크 - UI에서 완료되지 않은 상태면 취소 불가
+      if (!isCompletedInUI) {
+        if (__DEV__) {
+          console.log(`UI에서 완료되지 않은 태스크: ${taskId}`);
+        }
+        return { success: false };
+      }
+
+      // 🔥 수정: 고정 포인트 차감 (5포인트)
+      const pointToDeduct = 5;
+      const xpToDeduct = getTaskXP(task);
+
+      // 완료된 태스크 ID에서 제거 (기록용)
+      const newCompletedTaskIds = new Set(completedTaskIds);
+      newCompletedTaskIds.delete(taskId);
+      setCompletedTaskIds(newCompletedTaskIds);
+      await saveCompletedTaskIds(newCompletedTaskIds);
+
+      // 🔥 수정: 고정 포인트 차감
+      const pointsDeducted = await deductPoints(
+        pointToDeduct,
+        "일정 완료 취소",
+        "task_undo",
+        {
+          taskId: taskId,
+          taskName: task.task || "Unknown",
+        }
+      );
+
+      if (pointsDeducted) {
+        // XP 차감 (새로운 deductXP 함수 사용)
+        await deductXP(xpToDeduct, "일정 완료 취소");
+
+        // 완료한 일정 수 감소
+        const newCompletedTasks = Math.max(0, completedTasks - 1);
+        setCompletedTasks(newCompletedTasks);
+        await AsyncStorage.setItem(
+          COMPLETED_TASKS_KEY,
+          newCompletedTasks.toString()
+        );
+
+        // 시간대별 일정 카운트 감소
+        const hour = parseInt(task.startTime.split(":")[0]);
+        if (hour < 12) {
+          const newMorningTasks = Math.max(0, morningTasks - 1);
+          setMorningTasks(newMorningTasks);
+          await AsyncStorage.setItem(
+            MORNING_TASKS_KEY,
+            newMorningTasks.toString()
+          );
+        } else if (hour >= 18) {
+          const newEveningTasks = Math.max(0, eveningTasks - 1);
+          setEveningTasks(newEveningTasks);
+          await AsyncStorage.setItem(
+            EVENING_TASKS_KEY,
+            newEveningTasks.toString()
+          );
+        }
+
+        // 태스크 보상 기록에서도 제거
+        const { [taskId]: _, ...remainingRewards } = taskRewards;
+        setTaskRewards(remainingRewards);
+        await AsyncStorage.setItem(
+          TASK_REWARDS_KEY,
+          JSON.stringify(remainingRewards)
+        );
+
+        if (__DEV__) {
+          console.log(
+            `[undoTaskCompletion] 취소: ${taskId} | 차감된 포인트: ${pointToDeduct}P`
+          );
+        }
+        return { success: true, points: pointToDeduct, xp: xpToDeduct };
+      }
+
+      return { success: false };
+    } catch (error) {
+      console.error("일정 완료 취소 오류:", error);
+      return { success: false };
+    }
+  };
+
   const checkTaskCompletionBadges = async (taskCount) => {
-    // 완료 수 배지 목록
     const completionBadges = [
       { count: 1, id: "first_complete" },
       { count: 5, id: "five_complete" },
@@ -1263,7 +1507,6 @@ export const ProgressProvider = ({ children }) => {
       { count: 500, id: "five_hundred_complete" },
     ];
 
-    // 현재 완료 수에 맞는 배지 확인
     for (const badgeInfo of completionBadges) {
       if (taskCount === badgeInfo.count) {
         await awardBadge(badgeInfo.id);
@@ -1272,46 +1515,33 @@ export const ProgressProvider = ({ children }) => {
     }
   };
 
-  // 시간대별 배지 확인
   const checkTimeBasedBadges = async () => {
-    // 아침형 인간 (3개의 아침 일정)
     if (morningTasks === 3) {
       await awardBadge("morning_person");
     }
 
-    // 아침 마스터 (10개의 아침 일정)
     if (morningTasks === 10) {
       await awardBadge("morning_master");
     }
 
-    // 오후 성취자 (5개의 오후 일정)
-    // 여기서는 오후 일정 수를 직접 추적하지 않으므로 생략
-
-    // 밤 올빼미 (3개의 밤 일정)
     if (eveningTasks === 3) {
       await awardBadge("night_owl");
     }
 
-    // 밤의 지배자 (10개의 밤 일정)
     if (eveningTasks === 10) {
       await awardBadge("night_master");
     }
   };
 
-  // 모든 일정 완료 처리 함수
   const handleAllTasksCompleted = async () => {
     try {
-      // 완벽한 하루 배지 획득
       await awardBadge("perfect_day");
 
-      // 완벽한 날 수 증가
       const newPerfectDays = perfectDays + 1;
       setPerfectDays(newPerfectDays);
       await AsyncStorage.setItem(PERFECT_DAYS_KEY, newPerfectDays.toString());
 
-      // 완벽한 하루 미션 업데이트
       await checkMissionProgress("perfect_day");
-      // 완벽한 주/월 배지 확인 (향후 구현)
 
       return true;
     } catch (error) {
@@ -1320,7 +1550,7 @@ export const ProgressProvider = ({ children }) => {
     }
   };
 
-  // 다음 날 자정에 체크 상태 초기화 - 수정
+  // 다음 날 자정에 체크 상태 초기화
   useEffect(() => {
     const resetCheckStatus = () => {
       const now = new Date();
@@ -1334,11 +1564,14 @@ export const ProgressProvider = ({ children }) => {
         setCheckedToday(false);
         await AsyncStorage.removeItem(CHECKED_TODAY_KEY);
 
-        // 오늘 날짜 갱신 - 자정이 지나면 새 날짜로 업데이트
+        // 완료된 태스크 ID 초기화 (매일 자정)
+        setCompletedTaskIds(new Set());
+        await AsyncStorage.removeItem(COMPLETED_TASK_IDS_KEY);
+
         const newToday = formatDateStr(new Date());
         setLastCheckDate(newToday);
 
-        resetCheckStatus(); // 다음 날을 위해 재설정
+        resetCheckStatus();
       }, timeUntilMidnight);
 
       return () => clearTimeout(timeoutId);
@@ -1362,10 +1595,9 @@ export const ProgressProvider = ({ children }) => {
         setCheckedToday(false);
         await AsyncStorage.removeItem(CHECKED_TODAY_KEY);
 
-        // 일일 미션 초기화 추가
         await resetDailyMissions();
 
-        resetDaily(); // 다음 날을 위해 재설정
+        resetDaily();
       }, timeUntilMidnight);
     };
 
@@ -1376,7 +1608,7 @@ export const ProgressProvider = ({ children }) => {
   useEffect(() => {
     const resetWeekly = () => {
       const now = new Date();
-      const daysUntilMonday = (1 + 7 - now.getDay()) % 7; // 월요일까지 남은 일수
+      const daysUntilMonday = (1 + 7 - now.getDay()) % 7;
 
       const nextMonday = new Date();
       nextMonday.setDate(now.getDate() + daysUntilMonday);
@@ -1385,17 +1617,14 @@ export const ProgressProvider = ({ children }) => {
       const timeUntilMonday = nextMonday - now;
 
       setTimeout(async () => {
-        // 주간 미션 초기화
         await resetWeeklyMissions();
-
-        resetWeekly(); // 다음 주를 위해 재설정
+        resetWeekly();
       }, timeUntilMonday);
     };
 
     resetWeekly();
   }, []);
 
-  // 유저 레벨에 맞는 타이틀 가져오기
   const getCurrentLevelTitle = () => {
     const title = ALL_TITLES.find(
       (t) =>
@@ -1408,7 +1637,6 @@ export const ProgressProvider = ({ children }) => {
     return title ? title.name : "초보 계획자";
   };
 
-  // 현재 레벨의 진행 상황 계산
   const getLevelProgress = () => {
     try {
       if (typeof getRequiredXP !== "function") {
@@ -1441,7 +1669,6 @@ export const ProgressProvider = ({ children }) => {
 
   // 컨텍스트 값
   const value = {
-    // Ensure all values have defaults
     points: points || 0,
     xp: xp || 0,
     level: level || 1,
@@ -1459,8 +1686,10 @@ export const ProgressProvider = ({ children }) => {
     unusedDDaySlots,
     nextSlotPrice,
     handleGoalAdded,
+    completedTaskIds,
+    clearCompletedTaskIds, // 🔥 디버깅용 함수 추가
+    isLevelingUp, // 🔥 레벨업 상태 추가
 
-    // 미션 관련 상태 및 함수 추가
     dailyMissions,
     weeklyMissions,
     resetDailyMissions,
@@ -1474,18 +1703,20 @@ export const ProgressProvider = ({ children }) => {
       percentage: 0,
     },
 
-    // Functions (keep as is)
     addPoints,
     deductPoints,
     addXP,
+    deductXP,
     checkAttendance,
     purchaseDDaySlot,
     rewardTaskCompletion,
+    revertTaskCompletion,
+    undoTaskCompletion,
     awardBadge,
+    awardBadgeWithoutXP, // 🔥 새로운 함수 추가
     setUserTitle,
     handleAllTasksCompleted,
 
-    // Constants and resources
     ALL_BADGES,
     ALL_TITLES,
     BADGE_RARITY,

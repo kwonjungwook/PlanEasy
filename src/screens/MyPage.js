@@ -1,26 +1,28 @@
-import React, { useState, useEffect } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  Alert,
-  Modal,
-  ActivityIndicator,
-  TextInput,
-  KeyboardAvoidingView,
-  Platform,
-  Image,
-  FlatList,
-  SafeAreaView,
-} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useFocusEffect } from "@react-navigation/native";
+import * as ImagePicker from "expo-image-picker";
+import { StatusBar } from "expo-status-bar";
+import React, { useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Image,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  StatusBar as RNStatusBar,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { useAuth } from "../context/AuthContext";
 import { useSubscription } from "../context/SubscriptionContext";
-import { useFocusEffect } from "@react-navigation/native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as ImagePicker from "expo-image-picker";
 
 // 캐릭터 아바타 목록 (이미지 URL 대신 로컬 리소스 ID를 사용하는 실제 앱에서는 require() 사용)
 // 여기서는 예시 URL을 사용합니다
@@ -141,14 +143,14 @@ const MyPage = ({ navigation }) => {
         "플랜이지는 학습과 일상 계획을 효율적으로 관리할 수 있는 종합 플래너 앱입니다. 시간표 관리, 일정 추적, 학습 타이머, AI 학습 피드백 등의 기능을 제공합니다.",
     },
     {
-      question: "무료로 사용할 수 있나요?",
+      question: "정말 모든 기능이 무료인가요?",
       answer:
-        "네, 기본 기능은 무료로 사용하실 수 있습니다. 다만 일부 고급 기능은 플랜이지 플러스 구독을 통해 이용하실 수 있습니다.",
+        "네! 플랜이지의 모든 기능이 완전 무료입니다. AI 분석, 무제한 일정 생성, 고급 통계 등 모든 프리미엄 기능을 자유롭게 이용하실 수 있습니다.",
     },
     {
-      question: "플랜이지 플러스 구독은 얼마인가요?",
+      question: "무료 제공으로 바뀐 이유가 궁금합니다.",
       answer:
-        "플랜이지 플러스 구독은 월 4,900원, 연 49,000원으로 제공됩니다. 학생 할인과 정기적인 프로모션도 진행하고 있으니 앱 내 알림을 확인해 주세요.",
+        "더 많은 사용자분들께 플랜이지의 모든 기능을 제공하고 싶어서 무료 전환을 결정했습니다. 앞으로도 광고 없이 깔끔한 환경에서 모든 기능을 무료로 이용하실 수 있습니다.",
     },
     {
       question: "알림 설정은 어디서 변경하나요?",
@@ -458,105 +460,64 @@ const MyPage = ({ navigation }) => {
 
     return (
       <View style={styles.sectionContainer}>
-        <Text style={styles.sectionTitle}>플랜이지 플러스</Text>
+        <Text style={styles.sectionTitle}>
+          플랜이지 - 모든 기능 무료 제공! 🎉
+        </Text>
 
-        {isSubscribed ? (
-          // 구독 중인 경우
-          <>
-            <View style={styles.subscribedStatusContainer}>
-              <View style={styles.subscribedBadge}>
-                <Ionicons name="crown" size={22} color="#FFD700" />
-              </View>
-              <View style={styles.subscribedInfo}>
-                <Text style={styles.subscribedTitle}>
-                  플랜이지 플러스 구독 중 ✨
-                </Text>
-                <Text style={styles.subscribedDetail}>
-                  {subscriptionData?.planType === "yearly"
-                    ? "연간 구독"
-                    : "월간 구독"}{" "}
-                  •
-                  {subscriptionData?.expiryDate
-                    ? ` 다음 결제일: ${new Date(
-                        subscriptionData.expiryDate
-                      ).toLocaleDateString("ko-KR")}`
-                    : " 무기한"}
-                </Text>
-              </View>
-            </View>
+        {/* 무료 제공 상태 표시 */}
+        <View style={styles.freeStatusContainer}>
+          <View style={styles.freeBadge}>
+            <Ionicons name="heart" size={22} color="#FF6B6B" />
+          </View>
+          <View style={styles.freeInfo}>
+            <Text style={styles.freeTitle}>
+              모든 프리미엄 기능 무료 이용 중! ✨
+            </Text>
+            <Text style={styles.freeDetail}>영구 무료 • 모든 기능 포함</Text>
+          </View>
+        </View>
 
-            <TouchableOpacity style={styles.linkRow} onPress={goToSubscription}>
-              <Text style={styles.linkLabel}>구독 관리</Text>
-              <Ionicons name="chevron-forward" size={20} color="#aaa" />
-            </TouchableOpacity>
-          </>
-        ) : (
-          // 미구독 상태
-          <>
-            <TouchableOpacity
-              style={styles.subscribePromoContainer}
-              onPress={goToSubscription}
-              activeOpacity={0.7}
-            >
-              <View style={styles.subscribePromoBadge}>
-                <Ionicons name="diamond" size={20} color="#1976D2" />
-              </View>
-              <View style={styles.subscribePromoContent}>
-                <Text style={styles.subscribePromoTitle}>
-                  플러스 구독으로 업그레이드 🌟
-                </Text>
-                <Text style={styles.subscribePromoDescription}>
-                  더 많은 기능과 혜택을 누려보세요
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={24} color="#50cebb" />
-            </TouchableOpacity>
+        <TouchableOpacity style={styles.linkRow} onPress={goToSubscription}>
+          <Text style={styles.linkLabel}>무료 제공 안내 보기</Text>
+          <Ionicons name="chevron-forward" size={20} color="#aaa" />
+        </TouchableOpacity>
 
-            <TouchableOpacity style={styles.linkRow} onPress={goToSubscription}>
-              <View style={styles.benefitRow}>
-                <Ionicons
-                  name="medal-outline"
-                  size={16}
-                  color="#50cebb"
-                  style={styles.benefitIcon}
-                />
-                <Text style={styles.benefitLabel}>무제한 일정 생성</Text>
-              </View>
-            </TouchableOpacity>
+        {/* 무료 기능 목록 */}
+        <TouchableOpacity style={styles.linkRow} onPress={goToSubscription}>
+          <View style={styles.benefitRow}>
+            <Ionicons
+              name="checkmark-circle"
+              size={16}
+              color="#4CAF50"
+              style={styles.benefitIcon}
+            />
+            <Text style={styles.benefitLabel}>무제한 일정 생성 - 무료</Text>
+          </View>
+        </TouchableOpacity>
 
-            <TouchableOpacity style={styles.linkRow} onPress={goToSubscription}>
-              <View style={styles.benefitRow}>
-                <Ionicons
-                  name="sparkles-outline"
-                  size={16}
-                  color="#50cebb"
-                  style={styles.benefitIcon}
-                />
-                <Text style={styles.benefitLabel}>AI 학습 분석 및 추천</Text>
-              </View>
-            </TouchableOpacity>
+        <TouchableOpacity style={styles.linkRow} onPress={goToSubscription}>
+          <View style={styles.benefitRow}>
+            <Ionicons
+              name="checkmark-circle"
+              size={16}
+              color="#4CAF50"
+              style={styles.benefitIcon}
+            />
+            <Text style={styles.benefitLabel}>AI 학습 분석 및 추천 - 무료</Text>
+          </View>
+        </TouchableOpacity>
 
-            <TouchableOpacity style={styles.linkRow} onPress={goToSubscription}>
-              <View style={styles.benefitRow}>
-                <Ionicons
-                  name="cloud-done-outline"
-                  size={16}
-                  color="#50cebb"
-                  style={styles.benefitIcon}
-                />
-                <Text style={styles.benefitLabel}>클라우드 동기화 및 백업</Text>
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.viewAllBenefitsButton}
-              onPress={goToSubscription}
-            >
-              <Text style={styles.viewAllBenefitsText}>모든 혜택 보기</Text>
-              <Ionicons name="arrow-forward" size={16} color="#50cebb" />
-            </TouchableOpacity>
-          </>
-        )}
+        <TouchableOpacity style={styles.linkRow} onPress={goToSubscription}>
+          <View style={styles.benefitRow}>
+            <Ionicons
+              name="checkmark-circle"
+              size={16}
+              color="#4CAF50"
+              style={styles.benefitIcon}
+            />
+            <Text style={styles.benefitLabel}>모든 프리미엄 기능 - 무료</Text>
+          </View>
+        </TouchableOpacity>
       </View>
     );
   };
@@ -819,413 +780,436 @@ const MyPage = ({ navigation }) => {
   );
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <ScrollView style={styles.container}>
-        {(loading || subscriptionLoading) && (
-          <View style={styles.loadingOverlay}>
-            <ActivityIndicator size="large" color="#50cebb" />
-          </View>
-        )}
+    <View style={{ flex: 1, backgroundColor: "#ffffff" }}>
+      <StatusBar style="dark" backgroundColor="#ffffff" translucent={false} />
 
-        {/* 뒤로가기 버튼 */}
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => {
-            // navigation.goBack() 대신 안전하게 처리
-            if (navigation.canGoBack()) {
-              navigation.goBack();
-            } else {
-              navigation.navigate("Main"); // 뒤로 갈 수 없으면 메인으로
-            }
-          }}
-        >
-          <Ionicons name="chevron-back" size={24} color="#000" />
-        </TouchableOpacity>
+      <SafeAreaView
+        style={[
+          styles.container,
+          {
+            paddingTop:
+              Platform.OS === "android" ? RNStatusBar.currentHeight || 35 : 0,
+          },
+        ]}
+      >
+        <ScrollView style={styles.container}>
+          {(loading || subscriptionLoading) && (
+            <View style={styles.loadingOverlay}>
+              <ActivityIndicator size="large" color="#50cebb" />
+            </View>
+          )}
 
-        {/* 로그인 상태에 따라 다른 화면 표시 */}
-        {isLoggedIn ? (
-          // 로그인 상태 - 사용자 정보와 옵션 표시
-          <View style={styles.profileContainer}>
-            <View style={styles.profileHeaderContainer}>
-              {/* 프로필 이미지 */}
-              <TouchableOpacity
-                style={styles.profileImageContainer}
-                onPress={() => setShowImageOptions(true)}
-              >
-                {renderProfileImage()}
-                <View style={styles.cameraButton}>
-                  <Ionicons name="camera" size={16} color="#000" />
+          {/* 뒤로가기 버튼 */}
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => {
+              // navigation.goBack() 대신 안전하게 처리
+              if (navigation.canGoBack()) {
+                navigation.goBack();
+              } else {
+                navigation.navigate("Main"); // 뒤로 갈 수 없으면 메인으로
+              }
+            }}
+          >
+            <Ionicons name="chevron-back" size={24} color="#000" />
+          </TouchableOpacity>
+
+          {/* 로그인 상태에 따라 다른 화면 표시 */}
+          {isLoggedIn ? (
+            // 로그인 상태 - 사용자 정보와 옵션 표시
+            <View style={styles.profileContainer}>
+              <View style={styles.profileHeaderContainer}>
+                {/* 프로필 이미지 */}
+                <TouchableOpacity
+                  style={styles.profileImageContainer}
+                  onPress={() => setShowImageOptions(true)}
+                >
+                  {renderProfileImage()}
+                  <View style={styles.cameraButton}>
+                    <Ionicons name="camera" size={16} color="#000" />
+                  </View>
+                </TouchableOpacity>
+
+                {/* 사용자 이름 */}
+                <TouchableOpacity
+                  onPress={() => setShowNicknameModal(true)}
+                  style={styles.usernameContainer}
+                >
+                  <Text style={styles.usernameText}>
+                    {userData?.displayName
+                      ? `${userData.displayName}님`
+                      : "사용자님"}
+                  </Text>
+                  <Ionicons
+                    name="create-outline"
+                    size={16}
+                    color="#50cebb"
+                    style={styles.editIcon}
+                  />
+                </TouchableOpacity>
+
+                {/* 구독 상태 표시 */}
+                {isSubscribed && (
+                  <View style={styles.subscriptionBadgeContainer}>
+                    <Ionicons name="star" size={16} color="#FFD700" />
+                    <Text style={styles.subscriptionBadgeText}>
+                      플러스 회원
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              {/* 계정 정보 섹션 */}
+              <View style={styles.sectionContainer}>
+                <Text style={styles.sectionTitle}>계정 정보</Text>
+
+                <View style={styles.infoRow}>
+                  <View style={styles.infoLabelContainer}>
+                    <Ionicons
+                      name="mail-outline"
+                      size={18}
+                      color="#666"
+                      style={styles.infoIcon}
+                    />
+                    <Text style={styles.infoLabel}>이메일</Text>
+                  </View>
+                  <Text style={styles.infoValue}>
+                    {userData?.email || "연결된 계정 이메일"}
+                  </Text>
                 </View>
-              </TouchableOpacity>
 
-              {/* 사용자 이름 */}
-              <TouchableOpacity
-                onPress={() => setShowNicknameModal(true)}
-                style={styles.usernameContainer}
-              >
-                <Text style={styles.usernameText}>
-                  {userData?.displayName
-                    ? `${userData.displayName}님`
-                    : "사용자님"}
-                </Text>
+                <View style={styles.infoRow}>
+                  <View style={styles.infoLabelContainer}>
+                    <Ionicons
+                      name="log-in-outline"
+                      size={18}
+                      color="#666"
+                      style={styles.infoIcon}
+                    />
+                    <Text style={styles.infoLabel}>로그인 방식</Text>
+                  </View>
+                  <View style={styles.loginMethodContainer}>
+                    {userData?.authProvider === "google" && (
+                      <View style={styles.loginMethodBadge}>
+                        <Ionicons
+                          name="logo-google"
+                          size={14}
+                          color="#EA4335"
+                        />
+                        <Text style={styles.loginMethodText}>Google</Text>
+                      </View>
+                    )}
+
+                    {userData?.authProvider === "naver" && (
+                      <View style={styles.loginMethodBadge}>
+                        <Text
+                          style={[styles.loginMethodIcon, { color: "#1EC800" }]}
+                        >
+                          N
+                        </Text>
+                        <Text style={styles.loginMethodText}>Naver</Text>
+                      </View>
+                    )}
+
+                    {userData?.authProvider === "kakao" && (
+                      <View style={styles.loginMethodBadge}>
+                        <Ionicons name="chatbubble" size={14} color="#3A1D1D" />
+                        <Text style={styles.loginMethodText}>Kakao</Text>
+                      </View>
+                    )}
+
+                    {!userData?.authProvider && (
+                      <Text style={styles.infoValue}>이메일</Text>
+                    )}
+                  </View>
+                </View>
+              </View>
+
+              {/* 구독 섹션 */}
+              {renderSubscriptionSection()}
+            </View>
+          ) : (
+            // 비로그인 상태 - 로그인 유도 화면
+            <View style={styles.notLoggedInContainer}>
+              <View style={styles.notLoggedInIcon}>
                 <Ionicons
-                  name="create-outline"
-                  size={16}
+                  name="person-circle-outline"
+                  size={80}
                   color="#50cebb"
-                  style={styles.editIcon}
                 />
+              </View>
+              <Text style={styles.notLoggedInTitle}>로그인이 필요합니다</Text>
+              <Text style={styles.notLoggedInDescription}>
+                로그인하여 일정을 백업하고,{"\n"}
+                여러 기기에서 동기화하세요.{"\n"}
+              </Text>
+
+              <TouchableOpacity style={styles.loginButton} onPress={goToLogin}>
+                <Text style={styles.loginButtonText}>로그인 / 회원가입</Text>
               </TouchableOpacity>
 
-              {/* 구독 상태 표시 */}
-              {isSubscribed && (
-                <View style={styles.subscriptionBadgeContainer}>
-                  <Ionicons name="star" size={16} color="#FFD700" />
-                  <Text style={styles.subscriptionBadgeText}>플러스 회원</Text>
-                </View>
-              )}
-            </View>
-
-            {/* 계정 정보 섹션 */}
-            <View style={styles.sectionContainer}>
-              <Text style={styles.sectionTitle}>계정 정보</Text>
-
-              <View style={styles.infoRow}>
-                <View style={styles.infoLabelContainer}>
-                  <Ionicons
-                    name="mail-outline"
-                    size={18}
-                    color="#666"
-                    style={styles.infoIcon}
-                  />
-                  <Text style={styles.infoLabel}>이메일</Text>
-                </View>
-                <Text style={styles.infoValue}>
-                  {userData?.email || "연결된 계정 이메일"}
-                </Text>
-              </View>
-
-              <View style={styles.infoRow}>
-                <View style={styles.infoLabelContainer}>
-                  <Ionicons
-                    name="log-in-outline"
-                    size={18}
-                    color="#666"
-                    style={styles.infoIcon}
-                  />
-                  <Text style={styles.infoLabel}>로그인 방식</Text>
-                </View>
-                <View style={styles.loginMethodContainer}>
-                  {userData?.authProvider === "google" && (
-                    <View style={styles.loginMethodBadge}>
-                      <Ionicons name="logo-google" size={14} color="#EA4335" />
-                      <Text style={styles.loginMethodText}>Google</Text>
+              {/* 플랜이지 플러스 프로모션 - 개선된 디자인 */}
+              <View style={styles.premiumCardContainer}>
+                <View style={styles.premiumCardHeader}>
+                  <View style={styles.premiumTitleContainer}>
+                    <Text style={styles.premiumTitle}>플랜이지 플러스</Text>
+                    <View style={styles.crownBadge}>
+                      <Ionicons name="star" size={14} color="#FFD700" />
                     </View>
-                  )}
+                  </View>
+                  <Text style={styles.premiumSubtitle}>
+                    프리미엄 기능으로 더 스마트하게
+                  </Text>
+                </View>
 
-                  {userData?.authProvider === "naver" && (
-                    <View style={styles.loginMethodBadge}>
-                      <Text
-                        style={[styles.loginMethodIcon, { color: "#1EC800" }]}
-                      >
-                        N
+                <View style={styles.premiumFeatureList}>
+                  <View style={styles.premiumFeatureItem}>
+                    <View style={styles.featureIconContainer}>
+                      <Ionicons
+                        name="infinite-outline"
+                        size={22}
+                        color="#50cebb"
+                      />
+                    </View>
+                    <View style={styles.featureTextContainer}>
+                      <Text style={styles.featureTitle}>무제한 일정 생성</Text>
+                      <Text style={styles.featureDescription}>
+                        더 많은 일정을 효율적으로 관리하세요
                       </Text>
-                      <Text style={styles.loginMethodText}>Naver</Text>
                     </View>
-                  )}
+                  </View>
 
-                  {userData?.authProvider === "kakao" && (
-                    <View style={styles.loginMethodBadge}>
-                      <Ionicons name="chatbubble" size={14} color="#3A1D1D" />
-                      <Text style={styles.loginMethodText}>Kakao</Text>
+                  <View style={styles.premiumFeatureItem}>
+                    <View style={styles.featureIconContainer}>
+                      <Ionicons
+                        name="analytics-outline"
+                        size={22}
+                        color="#50cebb"
+                      />
                     </View>
-                  )}
+                    <View style={styles.featureTextContainer}>
+                      <Text style={styles.featureTitle}>AI 학습 분석</Text>
+                      <Text style={styles.featureDescription}>
+                        맞춤형 학습 패턴 분석과 추천을 받아보세요
+                      </Text>
+                    </View>
+                  </View>
 
-                  {!userData?.authProvider && (
-                    <Text style={styles.infoValue}>이메일</Text>
-                  )}
+                  <View style={styles.premiumFeatureItem}>
+                    <View style={styles.featureIconContainer}>
+                      <Ionicons
+                        name="cloud-done-outline"
+                        size={22}
+                        color="#50cebb"
+                      />
+                    </View>
+                    <View style={styles.featureTextContainer}>
+                      <Text style={styles.featureTitle}>클라우드 동기화</Text>
+                      <Text style={styles.featureDescription}>
+                        모든 기기에서 데이터를 안전하게 이용하세요
+                      </Text>
+                    </View>
+                  </View>
                 </View>
+
+                <TouchableOpacity
+                  style={styles.subscribeButton}
+                  onPress={() => {
+                    Alert.alert(
+                      "로그인 필요",
+                      "플랜이지 플러스를 이용하려면 먼저 로그인해주세요."
+                    );
+                  }}
+                >
+                  <Text style={styles.subscribeButtonText}>
+                    플러스 구독 혜택 더 알아보기
+                  </Text>
+                  <Ionicons name="arrow-forward" size={18} color="#fff" />
+                </TouchableOpacity>
               </View>
             </View>
+          )}
 
-            {/* 구독 섹션 */}
-            {renderSubscriptionSection()}
-          </View>
-        ) : (
-          // 비로그인 상태 - 로그인 유도 화면
-          <View style={styles.notLoggedInContainer}>
-            <View style={styles.notLoggedInIcon}>
-              <Ionicons
-                name="person-circle-outline"
-                size={80}
-                color="#50cebb"
-              />
-            </View>
-            <Text style={styles.notLoggedInTitle}>로그인이 필요합니다</Text>
-            <Text style={styles.notLoggedInDescription}>
-              로그인하여 일정을 백업하고,{"\n"}
-              여러 기기에서 동기화하세요.{"\n"}
-            </Text>
-
-            <TouchableOpacity style={styles.loginButton} onPress={goToLogin}>
-              <Text style={styles.loginButtonText}>로그인 / 회원가입</Text>
-            </TouchableOpacity>
-
-            {/* 플랜이지 플러스 프로모션 - 개선된 디자인 */}
-            <View style={styles.premiumCardContainer}>
-              <View style={styles.premiumCardHeader}>
-                <View style={styles.premiumTitleContainer}>
-                  <Text style={styles.premiumTitle}>플랜이지 플러스</Text>
-                  <View style={styles.crownBadge}>
-                    <Ionicons name="crown" size={14} color="#FFD700" />
-                  </View>
-                </View>
-                <Text style={styles.premiumSubtitle}>
-                  프리미엄 기능으로 더 스마트하게
-                </Text>
-              </View>
-
-              <View style={styles.premiumFeatureList}>
-                <View style={styles.premiumFeatureItem}>
-                  <View style={styles.featureIconContainer}>
-                    <Ionicons
-                      name="infinite-outline"
-                      size={22}
-                      color="#50cebb"
-                    />
-                  </View>
-                  <View style={styles.featureTextContainer}>
-                    <Text style={styles.featureTitle}>무제한 일정 생성</Text>
-                    <Text style={styles.featureDescription}>
-                      더 많은 일정을 효율적으로 관리하세요
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.premiumFeatureItem}>
-                  <View style={styles.featureIconContainer}>
-                    <Ionicons
-                      name="analytics-outline"
-                      size={22}
-                      color="#50cebb"
-                    />
-                  </View>
-                  <View style={styles.featureTextContainer}>
-                    <Text style={styles.featureTitle}>AI 학습 분석</Text>
-                    <Text style={styles.featureDescription}>
-                      맞춤형 학습 패턴 분석과 추천을 받아보세요
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.premiumFeatureItem}>
-                  <View style={styles.featureIconContainer}>
-                    <Ionicons
-                      name="cloud-done-outline"
-                      size={22}
-                      color="#50cebb"
-                    />
-                  </View>
-                  <View style={styles.featureTextContainer}>
-                    <Text style={styles.featureTitle}>클라우드 동기화</Text>
-                    <Text style={styles.featureDescription}>
-                      모든 기기에서 데이터를 안전하게 이용하세요
-                    </Text>
-                  </View>
-                </View>
-              </View>
-
-              <TouchableOpacity
-                style={styles.subscribeButton}
-                onPress={() => {
-                  Alert.alert(
-                    "로그인 필요",
-                    "플랜이지 플러스를 이용하려면 먼저 로그인해주세요."
-                  );
-                }}
-              >
-                <Text style={styles.subscribeButtonText}>
-                  플러스 구독 혜택 더 알아보기
-                </Text>
-                <Ionicons name="arrow-forward" size={18} color="#fff" />
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-
-        {/* 앱 정보 섹션 */}
-        <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>앱 정보</Text>
-
-          <TouchableOpacity
-            style={styles.linkRow}
-            onPress={() => setShowFAQModal(true)}
-          >
-            <View style={styles.linkLabelContainer}>
-              <Ionicons
-                name="help-circle-outline"
-                size={18}
-                color="#666"
-                style={styles.linkIcon}
-              />
-              <Text style={styles.linkLabel}>자주 묻는 질문</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color="#aaa" />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.linkRow}
-            onPress={() =>
-              Alert.alert(
-                "도움말 및 문의하기",
-                "kazuya7x@naver.com으로 문의해주세요."
-              )
-            }
-          >
-            <View style={styles.linkLabelContainer}>
-              <Ionicons
-                name="mail-outline"
-                size={18}
-                color="#666"
-                style={styles.linkIcon}
-              />
-              <Text style={styles.linkLabel}>도움말 및 문의하기</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color="#aaa" />
-          </TouchableOpacity>
-
-          <View style={styles.linkRow}>
-            <View style={styles.linkLabelContainer}>
-              <Ionicons
-                name="information-circle-outline"
-                size={18}
-                color="#666"
-                style={styles.linkIcon}
-              />
-              <Text style={styles.linkLabel}>앱 버전</Text>
-            </View>
-            <Text style={styles.versionText}>1.2.4</Text>
-          </View>
-        </View>
-        {/* 로그아웃 섹션 - 로그인된 경우에만 표시 */}
-        {isLoggedIn && (
+          {/* 앱 정보 섹션 */}
           <View style={styles.sectionContainer}>
-            <TouchableOpacity style={styles.linkRow} onPress={handleLogout}>
+            <Text style={styles.sectionTitle}>앱 정보</Text>
+
+            <TouchableOpacity
+              style={styles.linkRow}
+              onPress={() => setShowFAQModal(true)}
+            >
               <View style={styles.linkLabelContainer}>
                 <Ionicons
-                  name="log-out-outline"
+                  name="help-circle-outline"
                   size={18}
                   color="#666"
                   style={styles.linkIcon}
                 />
-                <Text style={styles.linkLabel}>로그 아웃</Text>
+                <Text style={styles.linkLabel}>자주 묻는 질문</Text>
               </View>
               <Ionicons name="chevron-forward" size={20} color="#aaa" />
             </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.linkRow}
-              onPress={() => {
+              onPress={() =>
                 Alert.alert(
-                  "회원 탈퇴",
-                  "회원 탈퇴 시 모든 데이터가 삭제되며 복구할 수 없습니다. 정말 탈퇴하시겠습니까?",
-                  [
-                    { text: "취소", style: "cancel" },
-                    {
-                      text: "탈퇴하기",
-                      onPress: async () => {
-                        try {
-                          const success = await deleteAccount();
-                          if (success) {
-                            // 회원 탈퇴 성공 시 모든 로컬 데이터 삭제
-                            console.log(
-                              "회원 탈퇴 성공: 모든 로컬 데이터 삭제 시작"
-                            );
+                  "도움말 및 문의하기",
+                  "kazuya7x@naver.com으로 문의해주세요."
+                )
+              }
+            >
+              <View style={styles.linkLabelContainer}>
+                <Ionicons
+                  name="mail-outline"
+                  size={18}
+                  color="#666"
+                  style={styles.linkIcon}
+                />
+                <Text style={styles.linkLabel}>도움말 및 문의하기</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#aaa" />
+            </TouchableOpacity>
 
-                            try {
-                              // 모든 데이터 일괄 삭제
-                              await AsyncStorage.clear();
-                              console.log("모든 AsyncStorage 데이터 삭제 완료");
+            <View style={styles.linkRow}>
+              <View style={styles.linkLabelContainer}>
+                <Ionicons
+                  name="information-circle-outline"
+                  size={18}
+                  color="#666"
+                  style={styles.linkIcon}
+                />
+                <Text style={styles.linkLabel}>앱 버전</Text>
+              </View>
+              <Text style={styles.versionText}>1.2.4</Text>
+            </View>
+          </View>
+          {/* 로그아웃 섹션 - 로그인된 경우에만 표시 */}
+          {isLoggedIn && (
+            <View style={styles.sectionContainer}>
+              <TouchableOpacity style={styles.linkRow} onPress={handleLogout}>
+                <View style={styles.linkLabelContainer}>
+                  <Ionicons
+                    name="log-out-outline"
+                    size={18}
+                    color="#666"
+                    style={styles.linkIcon}
+                  />
+                  <Text style={styles.linkLabel}>로그 아웃</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color="#aaa" />
+              </TouchableOpacity>
 
-                              // 주요 키 데이터 삭제 (확실히 하기 위한 백업 방법)
-                              const keysToRemove = [
-                                "@user_auth_data",
-                                "@user_subscription",
-                                "@user_terms_agreed",
-                                "@schedule_data",
-                                "@task_completion_data",
-                                "@section_states",
-                                "@unlocked_timer_methods",
-                                "@user_study_sessions",
-                                "@user_settings",
-                                "@point_history",
-                                "@color_purchases",
-                                "@recent_subjects",
-                              ];
-
-                              await Promise.all(
-                                keysToRemove.map((key) =>
-                                  AsyncStorage.removeItem(key)
-                                )
+              <TouchableOpacity
+                style={styles.linkRow}
+                onPress={() => {
+                  Alert.alert(
+                    "회원 탈퇴",
+                    "회원 탈퇴 시 모든 데이터가 삭제되며 복구할 수 없습니다. 정말 탈퇴하시겠습니까?",
+                    [
+                      { text: "취소", style: "cancel" },
+                      {
+                        text: "탈퇴하기",
+                        onPress: async () => {
+                          try {
+                            const success = await deleteAccount();
+                            if (success) {
+                              // 회원 탈퇴 성공 시 모든 로컬 데이터 삭제
+                              console.log(
+                                "회원 탈퇴 성공: 모든 로컬 데이터 삭제 시작"
                               );
-                              console.log("주요 데이터 키 삭제 완료");
-                            } catch (clearError) {
-                              console.error("데이터 삭제 중 오류:", clearError);
+
+                              try {
+                                // 모든 데이터 일괄 삭제
+                                await AsyncStorage.clear();
+                                console.log(
+                                  "모든 AsyncStorage 데이터 삭제 완료"
+                                );
+
+                                // 주요 키 데이터 삭제 (확실히 하기 위한 백업 방법)
+                                const keysToRemove = [
+                                  "@user_auth_data",
+                                  "@user_subscription",
+                                  "@user_terms_agreed",
+                                  "@schedule_data",
+                                  "@task_completion_data",
+                                  "@section_states",
+                                  "@unlocked_timer_methods",
+                                  "@user_study_sessions",
+                                  "@user_settings",
+                                  "@point_history",
+                                  "@color_purchases",
+                                  "@recent_subjects",
+                                ];
+
+                                await Promise.all(
+                                  keysToRemove.map((key) =>
+                                    AsyncStorage.removeItem(key)
+                                  )
+                                );
+                                console.log("주요 데이터 키 삭제 완료");
+                              } catch (clearError) {
+                                console.error(
+                                  "데이터 삭제 중 오류:",
+                                  clearError
+                                );
+                              }
+
+                              Alert.alert(
+                                "탈퇴 완료",
+                                "회원 탈퇴가 완료되었습니다. 모든 데이터가 삭제되었습니다."
+                              );
+
+                              // 메인 화면으로 이동
+                              navigation.reset({
+                                index: 0,
+                                routes: [{ name: "Main" }],
+                              });
+                            } else {
+                              Alert.alert(
+                                "오류",
+                                "회원 탈퇴 중 문제가 발생했습니다. 다시 시도해주세요."
+                              );
                             }
-
-                            Alert.alert(
-                              "탈퇴 완료",
-                              "회원 탈퇴가 완료되었습니다. 모든 데이터가 삭제되었습니다."
-                            );
-
-                            // 메인 화면으로 이동
-                            navigation.reset({
-                              index: 0,
-                              routes: [{ name: "Main" }],
-                            });
-                          } else {
+                          } catch (error) {
+                            console.error("탈퇴 처리 오류:", error);
                             Alert.alert(
                               "오류",
                               "회원 탈퇴 중 문제가 발생했습니다. 다시 시도해주세요."
                             );
                           }
-                        } catch (error) {
-                          console.error("탈퇴 처리 오류:", error);
-                          Alert.alert(
-                            "오류",
-                            "회원 탈퇴 중 문제가 발생했습니다. 다시 시도해주세요."
-                          );
-                        }
+                        },
+                        style: "destructive",
                       },
-                      style: "destructive",
-                    },
-                  ]
-                );
-              }}
-            >
-              <View style={styles.linkLabelContainer}>
-                <Ionicons
-                  name="trash-outline"
-                  size={18}
-                  color="#ff6b6b"
-                  style={styles.linkIcon}
-                />
-                <Text style={[styles.linkLabel, styles.deleteText]}>
-                  회원 탈퇴
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color="#aaa" />
-            </TouchableOpacity>
-          </View>
-        )}
+                    ]
+                  );
+                }}
+              >
+                <View style={styles.linkLabelContainer}>
+                  <Ionicons
+                    name="trash-outline"
+                    size={18}
+                    color="#ff6b6b"
+                    style={styles.linkIcon}
+                  />
+                  <Text style={[styles.linkLabel, styles.deleteText]}>
+                    회원 탈퇴
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color="#aaa" />
+              </TouchableOpacity>
+            </View>
+          )}
 
-        {/* 모달들 */}
-        <FAQModal />
-        <NicknameModal />
-        <EmojiPickerModal />
-        <CharacterPickerModal />
-        <ImageOptionsModal />
-      </ScrollView>
-    </SafeAreaView>
+          {/* 모달들 */}
+          <FAQModal />
+          <NicknameModal />
+          <EmojiPickerModal />
+          <CharacterPickerModal />
+          <ImageOptionsModal />
+        </ScrollView>
+      </SafeAreaView>
+    </View>
   );
 };
 
@@ -1423,7 +1407,7 @@ const styles = StyleSheet.create({
   },
 
   // 구독 섹션 스타일
-  subscribedStatusContainer: {
+  freeStatusContainer: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#FFF8E1",
@@ -1434,7 +1418,7 @@ const styles = StyleSheet.create({
     borderColor: "#FFE082",
     width: "100%", // 부모 컨테이너 너비에 맞춤
   },
-  subscribedBadge: {
+  freeBadge: {
     width: 40,
     height: 40,
     borderRadius: 20,
@@ -1450,16 +1434,16 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     elevation: 3,
   },
-  subscribedInfo: {
+  freeInfo: {
     flex: 1,
   },
-  subscribedTitle: {
+  freeTitle: {
     fontSize: 16,
     fontWeight: "bold",
     color: "#333",
     marginBottom: 4,
   },
-  subscribedDetail: {
+  freeDetail: {
     fontSize: 14,
     color: "#666",
   },

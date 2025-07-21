@@ -1,21 +1,26 @@
 // src/screens/StreakScreen.js
-import React, { useRef, useEffect } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Animated,
-  SafeAreaView,
-  FlatList,
-  Easing,
-} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { StatusBar } from "expo-status-bar";
+import { useEffect, useRef } from "react";
+import {
+  Animated,
+  Easing,
+  Platform,
+  StatusBar as RNStatusBar,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+
 import { useProgress } from "../context/ProgressContext";
 
 // src/screens/StreakScreen.js 시작 부분
 const StreakScreen = ({ navigation }) => {
+  // 토스트는 ProgressContext에서 전역적으로 처리
+
   // 기본값을 제공하여 undefined 방지
   const {
     streak = 0,
@@ -112,46 +117,12 @@ const StreakScreen = ({ navigation }) => {
     }
   }, [checkedToday, flameSize, pulseAnim]);
 
-  // 이번 주 출석 데이터
-  const daysOfWeek = ["일", "월", "화", "수", "목", "금", "토"];
-  const today = new Date();
-  const dayOfWeek = today.getDay(); // 0 = 일요일, 6 = 토요일
-
-  // 이번 주 출석 상태 (임의의 데이터, 실제로는 저장된 데이터에서 가져와야 함)
-  const weeklyAttendance = daysOfWeek.map((day, index) => {
-    // 오늘 기준으로 이번 주의 시작일(일요일) 구하기
-    const startOfWeek = new Date();
-    startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
-
-    // 해당 요일의 날짜 계산
-    const currentDate = new Date(startOfWeek);
-    currentDate.setDate(startOfWeek.getDate() + index);
-
-    // 날짜를 YYYY-MM-DD 형식으로 변환
-    const dateStr = currentDate.toISOString().split("T")[0];
-
-    // 미래 날짜인 경우
-    if (index > dayOfWeek) {
-      return { day, status: "future", date: dateStr };
-    }
-    // 오늘인 경우
-    else if (index === dayOfWeek) {
-      return {
-        day,
-        status: checkedToday ? "checked" : "today",
-        date: dateStr,
-      };
-    }
-    // 과거 날짜인 경우 - 실제 출석 데이터로 확인
-    else {
-      const wasPresent = attendanceData[dateStr] === true;
-      return {
-        day,
-        status: wasPresent ? "checked" : "missed",
-        date: dateStr,
-      };
-    }
-  });
+  // 간단한 출석 상태 표시
+  useEffect(() => {
+    console.log("StreakScreen - 디버깅 정보:");
+    console.log("현재 streak:", streak);
+    console.log("checkedToday:", checkedToday);
+  }, [streak, checkedToday]);
 
   // 다음 마일스톤 찾기 - 안전하게 처리
   const getNextMilestone = () => {
@@ -179,274 +150,328 @@ const StreakScreen = ({ navigation }) => {
   // 출석 체크 처리
   const handleAttendanceCheck = async () => {
     if (!checkedToday) {
-      await checkAttendance();
-    }
-  };
-
-  // 출석 상태에 따른 스타일
-  const getAttendanceStatusStyle = (status) => {
-    switch (status) {
-      case "checked":
-        return styles.dayChecked;
-      case "missed":
-        return styles.dayMissed;
-      case "today":
-        return styles.dayToday;
-      case "future":
-        return styles.dayFuture;
-      default:
-        return {};
-    }
-  };
-
-  // 출석 상태에 따른 아이콘
-  const getAttendanceStatusIcon = (status) => {
-    switch (status) {
-      case "checked":
-        return "✓";
-      case "missed":
-        return "✗";
-      case "today":
-        return "?";
-      case "future":
-        return "";
-      default:
-        return "";
+      try {
+        await checkAttendance();
+        // 토스트는 ProgressContext에서 자동으로 표시됨
+      } catch (error) {
+        console.error("출석 체크 실패:", error);
+        // 에러 토스트도 ProgressContext에서 처리됨
+      }
     }
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* 헤더 */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        >
-          <Ionicons name="arrow-back" size={24} color="#333" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>연속 출석</Text>
-        <View style={styles.headerRight}>
-          <TouchableOpacity onPress={() => navigation.navigate("FAQ")}>
-            <Ionicons name="help-circle-outline" size={24} color="#333" />
+    <View style={{ flex: 1, backgroundColor: "#ffffff" }}>
+      <StatusBar style="dark" backgroundColor="#ffffff" translucent={false} />
+
+      <SafeAreaView
+        style={[
+          styles.container,
+          {
+            paddingTop:
+              Platform.OS === "android" ? RNStatusBar.currentHeight || 35 : 0,
+          },
+        ]}
+      >
+        {/* 헤더 */}
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Ionicons name="arrow-back" size={24} color="#333" />
           </TouchableOpacity>
+          <Text style={styles.headerTitle}>연속 출석</Text>
+          <View style={styles.headerRight}>
+            <TouchableOpacity onPress={() => navigation.navigate("FAQ")}>
+              <Ionicons name="help-circle-outline" size={24} color="#333" />
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
 
-      <ScrollView style={styles.scrollView}>
-        {/* 현재 연속 출석 카드 */}
-        <View style={styles.streakCard}>
-          <View style={styles.streakCardContent}>
-            <Animated.View
-              style={[
-                styles.flameContainer,
-                { transform: [{ scale: flameSize }] },
-              ]}
-            >
-              <Text style={styles.fireEmoji}>
-                {streak >= 30 ? "🔥🔥🔥" : streak >= 7 ? "🔥🔥" : "🔥"}
-              </Text>
-            </Animated.View>
+        <ScrollView style={styles.scrollView}>
+          {/* 현재 연속 출석 카드 */}
+          <View style={styles.streakCard}>
+            <View style={styles.streakCardContent}>
+              <Animated.View
+                style={[
+                  styles.flameContainer,
+                  { transform: [{ scale: flameSize }] },
+                ]}
+              >
+                <Text style={styles.fireEmoji}>
+                  {streak >= 30 ? "🔥🔥🔥" : streak >= 7 ? "🔥🔥" : "🔥"}
+                </Text>
+              </Animated.View>
 
-            <View style={styles.streakInfo}>
-              <Text style={styles.streakCountLabel}>현재 연속 출석</Text>
-              <View style={styles.streakCountContainer}>
-                <Text style={styles.streakCountValue}>{streak}</Text>
-                <Text style={styles.streakCountUnit}>일</Text>
+              <View style={styles.streakInfo}>
+                <Text style={styles.streakCountLabel}>현재 연속 출석</Text>
+                <View style={styles.streakCountContainer}>
+                  <Text style={styles.streakCountValue}>{streak}</Text>
+                  <Text style={styles.streakCountUnit}>일</Text>
+                </View>
               </View>
             </View>
+
+            {/* 출석 체크 버튼 */}
+            {!checkedToday && (
+              <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
+                <TouchableOpacity
+                  style={styles.checkButton}
+                  onPress={handleAttendanceCheck}
+                >
+                  <Text style={styles.checkButtonText}>오늘 출석 체크하기</Text>
+                </TouchableOpacity>
+              </Animated.View>
+            )}
+
+            {checkedToday && (
+              <View style={styles.alreadyCheckedContainer}>
+                <Ionicons name="checkmark-circle" size={20} color="#4CAF50" />
+                <Text style={styles.alreadyCheckedText}>
+                  오늘은 이미 출석체크를 했습니다!
+                </Text>
+              </View>
+            )}
           </View>
 
-          {/* 출석 체크 버튼 */}
-          {!checkedToday && (
-            <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
-              <TouchableOpacity
-                style={styles.checkButton}
-                onPress={handleAttendanceCheck}
-              >
-                <Text style={styles.checkButtonText}>오늘 출석 체크하기</Text>
-              </TouchableOpacity>
-            </Animated.View>
-          )}
+          {/* 개선된 출석 현황 카드 */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>
+              <Text style={styles.sectionEmoji}>📊</Text> 출석 현황
+            </Text>
 
-          {checkedToday && (
-            <View style={styles.alreadyCheckedContainer}>
-              <Ionicons name="checkmark-circle" size={20} color="#4CAF50" />
-              <Text style={styles.alreadyCheckedText}>
-                오늘은 이미 출석체크를 했습니다!
-              </Text>
-            </View>
-          )}
-        </View>
-
-        {/* 이번 주 출석 상태 */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
-            <Text style={styles.sectionEmoji}>📅</Text> 이번 주 출석
-          </Text>
-
-          <View style={styles.weeklyContainer}>
-            {weeklyAttendance.map((dayData, index) => (
-              <View key={index} style={styles.dayContainer}>
-                <Text style={styles.dayText}>{dayData.day}</Text>
-                <View
-                  style={[
-                    styles.dayStatus,
-                    getAttendanceStatusStyle(dayData.status),
-                  ]}
-                >
-                  <Text style={styles.dayStatusIcon}>
-                    {getAttendanceStatusIcon(dayData.status)}
+            <View style={styles.statusGrid}>
+              {/* 연속 출석 카드 */}
+              <View style={styles.statusCard}>
+                <View style={styles.statusCardHeader}>
+                  <View style={styles.statusIconContainer}>
+                    <Text style={styles.statusIcon}>🔥</Text>
+                  </View>
+                  <Text style={styles.statusCardTitle}>연속 출석</Text>
+                </View>
+                <View style={styles.statusCardBody}>
+                  <Text style={styles.statusCardValue}>{streak}</Text>
+                  <Text style={styles.statusCardUnit}>일</Text>
+                </View>
+                <View style={styles.statusCardFooter}>
+                  <Text style={styles.statusCardSubtext}>
+                    {streak > 0
+                      ? "멋져요! 계속 유지해보세요"
+                      : "오늘부터 시작해보세요"}
                   </Text>
                 </View>
               </View>
-            ))}
-          </View>
-        </View>
 
-        {/* 다음 마일스톤 */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
-            <Text style={styles.sectionEmoji}>🎯</Text> 다음 마일스톤까지
-          </Text>
-
-          <View style={styles.milestoneContainer}>
-            <View style={styles.milestoneProgress}>
-              <View
-                style={[
-                  styles.milestoneProgressFill,
-                  {
-                    width: `${Math.min(
-                      100,
-                      nextMilestone && nextMilestone.days
-                        ? (streak / nextMilestone.days) * 100
-                        : 0
-                    )}%`,
-                  },
-                ]}
-              />
-            </View>
-
-            <View style={styles.milestoneInfo}>
-              <Text style={styles.milestoneCount}>
-                {streak}/{nextMilestone.days}일
-              </Text>
-              <Text style={styles.milestoneDaysLeft}>
-                {daysToNextMilestone === 0
-                  ? "오늘 마일스톤 달성!"
-                  : `${daysToNextMilestone}일 남음`}
-              </Text>
-            </View>
-
-            <View style={styles.milestoneReward}>
-              <View style={styles.rewardItem}>
-                <Text style={styles.rewardIcon}>💰</Text>
-                <Text style={styles.rewardValue}>
-                  {nextMilestone.reward.points}P
-                </Text>
-              </View>
-              <View style={styles.rewardItem}>
-                <Text style={styles.rewardIcon}>⭐</Text>
-                <Text style={styles.rewardValue}>
-                  {nextMilestone.reward.xp}XP
-                </Text>
-              </View>
-              <View style={styles.rewardItem}>
-                <Text style={styles.rewardIcon}>
-                  {nextMilestone.badge.icon}
-                </Text>
-                <Text style={styles.rewardValue}>배지</Text>
-              </View>
-            </View>
-          </View>
-        </View>
-
-        {/* 출석 배지 */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
-            <Text style={styles.sectionEmoji}>🏆</Text> 출석 배지
-          </Text>
-
-          <View style={styles.badgesContainer}>
-            {streakMilestones.map((milestone) => {
-              const isEarned = earnedBadges.includes(milestone.badge.id);
-
-              return (
-                <View
-                  key={milestone.badge.id}
-                  style={[
-                    styles.badgeItem,
-                    !isEarned && styles.badgeItemLocked,
-                  ]}
-                >
+              {/* 오늘 출석 카드 */}
+              <View style={styles.statusCard}>
+                <View style={styles.statusCardHeader}>
                   <View
                     style={[
-                      styles.badgeIcon,
-                      !isEarned && styles.badgeIconLocked,
+                      styles.statusIconContainer,
+                      checkedToday
+                        ? styles.statusIconCompleted
+                        : styles.statusIconPending,
                     ]}
                   >
-                    <Text style={styles.badgeIconText}>
-                      {isEarned ? milestone.badge.icon : "🔒"}
-                    </Text>
+                    <Ionicons
+                      name={checkedToday ? "checkmark-circle" : "time-outline"}
+                      size={20}
+                      color="#FFFFFF"
+                    />
                   </View>
-                  <View style={styles.badgeInfo}>
-                    <Text
+                  <Text style={styles.statusCardTitle}>오늘 출석</Text>
+                </View>
+                <View style={styles.statusCardBody}>
+                  <Text
+                    style={[
+                      styles.statusCardLabel,
+                      checkedToday
+                        ? styles.statusCompleted
+                        : styles.statusPending,
+                    ]}
+                  >
+                    {checkedToday ? "완료" : "대기중"}
+                  </Text>
+                </View>
+                <View style={styles.statusCardFooter}>
+                  <Text style={styles.statusCardSubtext}>
+                    {checkedToday
+                      ? "오늘도 수고하셨습니다!"
+                      : "출석 체크를 해주세요"}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {/* 진행률 표시 */}
+            {streak > 0 && (
+              <View style={styles.progressSection}>
+                <View style={styles.progressHeader}>
+                  <Text style={styles.progressTitle}>이번 달 진행률</Text>
+                  <Text style={styles.progressPercentage}>
+                    {Math.min(100, Math.round((streak / 30) * 100))}%
+                  </Text>
+                </View>
+                <View style={styles.progressBarContainer}>
+                  <View
+                    style={[
+                      styles.progressBarFill,
+                      { width: `${Math.min(100, (streak / 30) * 100)}%` },
+                    ]}
+                  />
+                </View>
+                <Text style={styles.progressSubtext}>
+                  30일 연속 출석까지 {Math.max(0, 30 - streak)}일 남았습니다
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {/* 다음 마일스톤 */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>
+              <Text style={styles.sectionEmoji}>🎯</Text> 다음 마일스톤까지
+            </Text>
+
+            <View style={styles.milestoneContainer}>
+              <View style={styles.milestoneProgress}>
+                <View
+                  style={[
+                    styles.milestoneProgressFill,
+                    {
+                      width: `${Math.min(
+                        100,
+                        nextMilestone && nextMilestone.days
+                          ? (streak / nextMilestone.days) * 100
+                          : 0
+                      )}%`,
+                    },
+                  ]}
+                />
+              </View>
+
+              <View style={styles.milestoneInfo}>
+                <Text style={styles.milestoneCount}>
+                  {streak}/{nextMilestone.days}일
+                </Text>
+                <Text style={styles.milestoneDaysLeft}>
+                  {daysToNextMilestone === 0
+                    ? "오늘 마일스톤 달성!"
+                    : `${daysToNextMilestone}일 남음`}
+                </Text>
+              </View>
+
+              <View style={styles.milestoneReward}>
+                <View style={styles.rewardItem}>
+                  <Text style={styles.rewardIcon}>💰</Text>
+                  <Text style={styles.rewardValue}>
+                    {nextMilestone.reward.points}P
+                  </Text>
+                </View>
+                <View style={styles.rewardItem}>
+                  <Text style={styles.rewardIcon}>⭐</Text>
+                  <Text style={styles.rewardValue}>
+                    {nextMilestone.reward.xp}XP
+                  </Text>
+                </View>
+                <View style={styles.rewardItem}>
+                  <Text style={styles.rewardIcon}>
+                    {nextMilestone.badge.icon}
+                  </Text>
+                  <Text style={styles.rewardValue}>배지</Text>
+                </View>
+              </View>
+            </View>
+          </View>
+
+          {/* 출석 배지 */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>
+              <Text style={styles.sectionEmoji}>🏆</Text> 출석 배지
+            </Text>
+
+            <View style={styles.badgesContainer}>
+              {streakMilestones.map((milestone) => {
+                const isEarned = earnedBadges.includes(milestone.badge.id);
+
+                return (
+                  <View
+                    key={milestone.badge.id}
+                    style={[
+                      styles.badgeItem,
+                      !isEarned && styles.badgeItemLocked,
+                    ]}
+                  >
+                    <View
                       style={[
-                        styles.badgeName,
-                        !isEarned && styles.badgeNameLocked,
+                        styles.badgeIcon,
+                        !isEarned && styles.badgeIconLocked,
                       ]}
                     >
-                      {milestone.badge.name}
-                    </Text>
-                    <Text style={styles.badgeDays}>
-                      {milestone.days}일 연속 출석
-                    </Text>
+                      <Text style={styles.badgeIconText}>
+                        {isEarned ? milestone.badge.icon : "🔒"}
+                      </Text>
+                    </View>
+                    <View style={styles.badgeInfo}>
+                      <Text
+                        style={[
+                          styles.badgeName,
+                          !isEarned && styles.badgeNameLocked,
+                        ]}
+                      >
+                        {milestone.badge.name}
+                      </Text>
+                      <Text style={styles.badgeDays}>
+                        {milestone.days}일 연속 출석
+                      </Text>
+                    </View>
                   </View>
-                </View>
-              );
-            })}
+                );
+              })}
+            </View>
           </View>
-        </View>
 
-        {/* 연속 출석 팁 */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
-            <Text style={styles.sectionEmoji}>💡</Text> 연속 출석 팁
-          </Text>
-
-          <View style={styles.tipItem}>
-            <Text style={styles.tipIcon}>⏰</Text>
-            <Text style={styles.tipText}>
-              매일 같은 시간에 앱을 열어 출석 체크하는 습관을 들이세요
+          {/* 연속 출석 팁 */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>
+              <Text style={styles.sectionEmoji}>💡</Text> 연속 출석 팁
             </Text>
+
+            <View style={styles.tipItem}>
+              <Text style={styles.tipIcon}>⏰</Text>
+              <Text style={styles.tipText}>
+                매일 같은 시간에 앱을 열어 출석 체크하는 습관을 들이세요
+              </Text>
+            </View>
+
+            <View style={styles.tipItem}>
+              <Text style={styles.tipIcon}>📱</Text>
+              <Text style={styles.tipText}>
+                알림을 설정하여 출석 체크를 놓치지 마세요
+              </Text>
+            </View>
+
+            <View style={styles.tipItem}>
+              <Text style={styles.tipIcon}>🔄</Text>
+              <Text style={styles.tipText}>
+                연속 출석이 끊어지면, 바로 다시 시작하세요
+              </Text>
+            </View>
+
+            <View style={styles.tipItem}>
+              <Text style={styles.tipIcon}>🎯</Text>
+              <Text style={styles.tipText}>
+                다음 마일스톤을 목표로 설정하고 달성해보세요
+              </Text>
+            </View>
           </View>
 
-          <View style={styles.tipItem}>
-            <Text style={styles.tipIcon}>📱</Text>
-            <Text style={styles.tipText}>
-              알림을 설정하여 출석 체크를 놓치지 마세요
-            </Text>
-          </View>
-
-          <View style={styles.tipItem}>
-            <Text style={styles.tipIcon}>🔄</Text>
-            <Text style={styles.tipText}>
-              연속 출석이 끊어지면, 바로 다시 시작하세요
-            </Text>
-          </View>
-
-          <View style={styles.tipItem}>
-            <Text style={styles.tipIcon}>🎯</Text>
-            <Text style={styles.tipText}>
-              다음 마일스톤을 목표로 설정하고 달성해보세요
-            </Text>
-          </View>
-        </View>
-
-        {/* 하단 여백 */}
-        <View style={{ height: 40 }} />
-      </ScrollView>
-    </SafeAreaView>
+          {/* 하단 여백 */}
+          <View style={{ height: 40 }} />
+        </ScrollView>
+      </SafeAreaView>
+    </View>
   );
 };
 
@@ -578,50 +603,124 @@ const styles = StyleSheet.create({
     fontSize: 20,
     marginRight: 8,
   },
-  weeklyContainer: {
+  statusGrid: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 20,
+  },
+  statusCard: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 16,
+    marginHorizontal: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: "#F1F3F4",
+  },
+  statusCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  statusIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#FF7043",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 8,
+  },
+  statusIconCompleted: {
+    backgroundColor: "#4CAF50",
+  },
+  statusIconPending: {
+    backgroundColor: "#FF9800",
+  },
+  statusIcon: {
+    fontSize: 16,
+  },
+  statusCardTitle: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#6C757D",
+  },
+  statusCardBody: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    marginBottom: 8,
+  },
+  statusCardValue: {
+    fontSize: 32,
+    fontWeight: "bold",
+    color: "#212529",
+  },
+  statusCardUnit: {
+    fontSize: 16,
+    color: "#6C757D",
+    marginLeft: 4,
+    marginBottom: 4,
+  },
+  statusCardLabel: {
+    fontSize: 18,
+    fontWeight: "600",
+  },
+  statusCompleted: {
+    color: "#4CAF50",
+  },
+  statusPending: {
+    color: "#FF9800",
+  },
+  statusCardFooter: {
+    marginTop: 4,
+  },
+  statusCardSubtext: {
+    fontSize: 12,
+    color: "#9E9E9E",
+    lineHeight: 16,
+  },
+  progressSection: {
+    backgroundColor: "#F8F9FA",
+    borderRadius: 12,
+    padding: 16,
+  },
+  progressHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 8,
+    marginBottom: 12,
   },
-  dayContainer: {
-    alignItems: "center",
-  },
-  dayText: {
+  progressTitle: {
     fontSize: 14,
     fontWeight: "500",
     color: "#495057",
+  },
+  progressPercentage: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#FF7043",
+  },
+  progressBarContainer: {
+    height: 8,
+    backgroundColor: "#E9ECEF",
+    borderRadius: 4,
+    overflow: "hidden",
     marginBottom: 8,
   },
-  dayStatus: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "#F8F9FA",
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 2,
-    borderColor: "#F8F9FA",
+  progressBarFill: {
+    height: "100%",
+    backgroundColor: "#FF7043",
+    borderRadius: 4,
   },
-  dayChecked: {
-    backgroundColor: "#E8F5E9",
-    borderColor: "#4CAF50",
-  },
-  dayMissed: {
-    backgroundColor: "#FFEBEE",
-    borderColor: "#E53935",
-  },
-  dayToday: {
-    backgroundColor: "#FFF3E0",
-    borderColor: "#FF9800",
-  },
-  dayFuture: {
-    backgroundColor: "#ECEFF1",
-    borderColor: "#B0BEC5",
-  },
-  dayStatusIcon: {
-    fontSize: 16,
-    fontWeight: "bold",
+  progressSubtext: {
+    fontSize: 12,
+    color: "#6C757D",
+    textAlign: "center",
   },
   milestoneContainer: {
     backgroundColor: "#F8F9FA",

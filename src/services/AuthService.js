@@ -1,26 +1,20 @@
 // src/services/AuthService.js
-import { auth, GoogleAuthProvider } from "../firebaseConfig";
-import {
-  signInWithPopup,
-  signInWithRedirect,
-  getRedirectResult,
-  signOut as firebaseSignOut,
-  onAuthStateChanged,
-} from "firebase/auth";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Platform } from "react-native";
-import * as WebBrowser from "expo-web-browser";
 import {
   GoogleSignin,
   statusCodes,
 } from "@react-native-google-signin/google-signin";
-import * as Linking from "expo-linking";
+import * as WebBrowser from "expo-web-browser";
 import {
-  login as kakaoLogin,
-  getProfile as kakaoGetProfile,
-  logout as kakaoLogout,
-  unlink as kakaoUnlink,
-} from "@react-native-seoul/kakao-login";
+  signOut as firebaseSignOut,
+  getRedirectResult,
+  onAuthStateChanged,
+  signInWithPopup,
+  signInWithRedirect,
+} from "firebase/auth";
+import { Platform } from "react-native";
+import { auth, GoogleAuthProvider } from "../firebaseConfig";
+import KakaoLoginService from "../services/KakaoLoginService";
 import NaverLoginService from "../services/NaverLoginService";
 
 // Storage keys
@@ -207,7 +201,6 @@ const signInWithGoogleNative = async () => {
 /**
  * 네이버 로그인 구현 - 네이티브 크래시 방지
  */
-
 const signInWithNaver = async () => {
   try {
     console.log("네이버 로그인 시작 - 네이티브 SDK 사용");
@@ -215,22 +208,34 @@ const signInWithNaver = async () => {
     // 네이티브 모듈 통한 로그인
     const result = await NaverLoginService.login();
 
-    // 프로필 정보 요청
-    const profileInfo = await NaverLoginService.getProfile();
-    console.log("네이버 프로필 정보:", profileInfo);
+    // 사용자가 취소한 경우 (NaverLoginService에서 null 반환)
+    if (result === null) {
+      console.log("네이버 로그인 사용자 취소");
+      return null;
+    }
 
-    if (result && result.accessToken) {
-      console.log("네이버 로그인 성공:", result);
+    // 로그인 결과가 없거나 accessToken이 없는 경우
+    if (!result || !result.accessToken) {
+      console.log("네이버 로그인 실패: 인증 토큰을 받지 못했습니다");
+      return null;
+    }
+
+    console.log("네이버 로그인 성공:", result);
+
+    // 프로필 정보 요청
+    try {
+      const profileInfo = await NaverLoginService.getProfile();
+      console.log("네이버 프로필 정보:", profileInfo);
 
       // 사용자 데이터 형태 생성
       const userData = {
-        uid: `naver-${profileInfo.id}`,
+        uid: `naver-${profileInfo.id || Date.now()}`,
         email: profileInfo.email || "",
         displayName:
           profileInfo.name || profileInfo.nickname || "네이버 사용자",
         photoURL: profileInfo.profileImage || null,
         authProvider: "naver",
-        accessToken: result.accessToken, // 여기가 수정된 부분 (loginResult → result)
+        accessToken: result.accessToken,
         // 추가 정보
         gender: profileInfo.gender,
         age: profileInfo.age,
@@ -238,11 +243,32 @@ const signInWithNaver = async () => {
       };
 
       return userData;
+    } catch (profileError) {
+      console.warn(
+        "네이버 프로필 정보 요청 실패, 기본 정보로 진행:",
+        profileError.message
+      );
+
+      // 프로필 정보 없이도 기본 사용자 데이터 생성
+      const userData = {
+        uid: `naver-${Date.now()}`,
+        email: "",
+        displayName: "네이버 사용자",
+        photoURL: null,
+        authProvider: "naver",
+        accessToken: result.accessToken,
+      };
+
+      return userData;
+    }
+  } catch (error) {
+    // 사용자 취소인 경우 에러 로그 출력하지 않고 null 반환
+    if (error.message && error.message.includes("user_cancel")) {
+      console.log("네이버 로그인 사용자 취소 (AuthService)");
+      return null;
     }
 
-    console.log("네이버 로그인 결과 없음");
-    return null;
-  } catch (error) {
+    // 실제 에러인 경우에만 에러 로그 출력
     console.error("네이버 로그인 오류:", error);
     throw error;
   }
@@ -291,117 +317,75 @@ const initNaverSDK = async () => {
 };
 
 /**
- * Sign in with Kakao - Native implementation
+ * Sign in with Kakao - Native implementation (네이티브 방식)
  * @returns {Promise<Object|null>} User data or null
  */
 const signInWithKakaoNative = async () => {
   try {
-    console.log("Attempting Kakao sign-in");
+    console.log("[AuthService] 카카오 로그인 시작 - 네이티브 모듈 사용");
 
-    // Verify login function
-    if (typeof kakaoLogin !== "function") {
-      throw new Error("Kakao login function not found");
+    // 카카오 로그인 시도
+    const result = await KakaoLoginService.login();
+    console.log("[AuthService] 카카오 로그인 결과:", !!result);
+
+    if (!result || !result.accessToken) {
+      console.log("[AuthService] 카카오 로그인 실패 또는 취소");
+      return null;
     }
 
-    // Perform sign-in with timeout protection
-    return new Promise((resolve, reject) => {
-      const timeoutId = setTimeout(() => {
-        reject(new Error("Kakao login timed out (15 seconds)"));
-      }, 15000);
+    // 프로필 정보 요청
+    let profileInfo = null;
+    try {
+      profileInfo = await KakaoLoginService.getProfile();
+      console.log("[AuthService] 카카오 프로필 정보 획득 성공");
+    } catch (profileError) {
+      console.warn(
+        "[AuthService] 카카오 프로필 정보 획득 실패:",
+        profileError.message
+      );
+    }
 
-      kakaoLogin()
-        .then((token) => {
-          clearTimeout(timeoutId);
-          console.log("Kakao login successful, token obtained");
+    // 사용자 데이터 생성
+    let userData;
+    if (profileInfo) {
+      userData = {
+        uid: `kakao-${profileInfo.id || Date.now()}`,
+        email: profileInfo.email || "",
+        displayName: profileInfo.nickname || "카카오 사용자",
+        photoURL: profileInfo.profileImageUrl || null,
+        authProvider: "kakao",
+        accessToken: result.accessToken,
+      };
+    } else {
+      // 프로필 정보 없을 때 기본 데이터
+      userData = {
+        uid: `kakao-${Date.now()}`,
+        email: "",
+        displayName: "카카오 사용자",
+        photoURL: null,
+        authProvider: "kakao",
+        accessToken: result.accessToken,
+      };
+    }
 
-          // Get profile information
-          if (typeof kakaoGetProfile === "function") {
-            kakaoGetProfile()
-              .then((profile) => {
-                console.log("Kakao profile retrieved successfully");
+    console.log("[AuthService] 카카오 사용자 데이터 생성 완료");
 
-                const userData = createUserData(
-                  {
-                    id: profile.id || Date.now(),
-                    email: profile.email || "",
-                    nickname: profile.nickname || "Kakao User",
-                    profileImageUrl: profile.profileImageUrl || null,
-                  },
-                  "kakao"
-                );
+    // 사용자 데이터 저장
+    await saveUserData(userData);
+    console.log("[AuthService] 카카오 사용자 데이터 저장 완료");
 
-                // Add token to user data
-                userData.accessToken = token.accessToken;
-
-                saveUserData(userData)
-                  .then(() => resolve(userData))
-                  .catch((err) => reject(err));
-              })
-              .catch((profileErr) => {
-                console.error("Failed to retrieve Kakao profile:", profileErr);
-
-                // Create limited user data without profile
-                const limitedUserData = createUserData(
-                  {
-                    id: Date.now(),
-                    nickname: "Kakao User",
-                  },
-                  "kakao"
-                );
-
-                // Add token to user data
-                limitedUserData.accessToken = token.accessToken;
-
-                saveUserData(limitedUserData)
-                  .then(() => resolve(limitedUserData))
-                  .catch((err) => reject(err));
-              });
-          } else {
-            console.warn("kakaoGetProfile function not found");
-
-            // Create basic user data
-            const basicUserData = createUserData(
-              {
-                id: Date.now(),
-                nickname: "Kakao User",
-              },
-              "kakao"
-            );
-
-            // Add token to user data
-            basicUserData.accessToken = token.accessToken;
-
-            saveUserData(basicUserData)
-              .then(() => resolve(basicUserData))
-              .catch((err) => reject(err));
-          }
-        })
-        .catch((loginErr) => {
-          clearTimeout(timeoutId);
-
-          // 사용자 취소 확인
-          if (
-            loginErr.toString().includes("user cancelled") ||
-            loginErr.message?.includes("user cancelled")
-          ) {
-            console.log("사용자가 카카오 로그인을 취소했습니다.");
-            resolve(null); // 취소는 null 반환
-            return;
-          }
-
-          console.error("Kakao login error:", loginErr);
-          reject(loginErr);
-        });
-    });
+    return userData;
   } catch (error) {
-    console.error("Kakao sign-in preparation error:", error);
+    console.error("[AuthService] 카카오 로그인 오류:", error);
 
     // 사용자 취소 확인
     if (
       error.toString().includes("user cancelled") ||
-      error.message?.includes("user cancelled")
+      error.message?.includes("user cancelled") ||
+      error.toString().includes("OPERATION_CANCELED") ||
+      error.message?.includes("OPERATION_CANCELED")
     ) {
-      console.log("사용자가 카카오 로그인을 취소했습니다.");
+      console.log("[AuthService] 사용자가 카카오 로그인을 취소했습니다.");
       return null; // 취소는 null 반환
     }
 
@@ -480,51 +464,21 @@ const unlinkNaverAccount = async () => {
 };
 
 /**
- * Unlink Kakao account
+ * Unlink Kakao account - 네이티브 방식
  * @returns {Promise<boolean>} Success status
  */
-// unlinkKakaoAccount 함수 수정
 const unlinkKakaoAccount = async () => {
   try {
-    console.log("Attempting to unlink Kakao account");
+    console.log("[AuthService] 카카오 계정 연결 해제 시작 (네이티브 방식)");
 
-    // 로컬 스토리지에서 카카오 관련 데이터 제거
-    const kakaoKeys = ["@kakao_token", "@kakao_login_data", "@kakao_profile"];
+    // KakaoLoginService의 unlink 함수 사용
+    const result = await KakaoLoginService.unlink();
+    console.log("[AuthService] 카카오 계정 연결 해제 결과:", result);
 
-    try {
-      await Promise.all(kakaoKeys.map((key) => AsyncStorage.removeItem(key)));
-      console.log("Kakao local data removed");
-    } catch (localError) {
-      console.warn("Error removing Kakao local data:", localError);
-    }
-
-    // 이미 로그아웃된 상태일 수 있으므로 예외 처리
-    if (typeof kakaoUnlink !== "function") {
-      console.warn("Kakao unlink function not found - ignored");
-      return true;
-    }
-
-    try {
-      await kakaoUnlink();
-      console.log("Kakao account unlinked successfully");
-      return true;
-    } catch (unlinkError) {
-      // 토큰이 없는 경우나 이미 연결 해제된 경우 처리
-      if (
-        unlinkError.toString().includes("tokens don't exist") ||
-        unlinkError.message?.includes("tokens don't exist")
-      ) {
-        console.log("Kakao account already unlinked (no tokens)");
-        return true;
-      }
-
-      console.error("Failed to unlink Kakao account:", unlinkError);
-      // 실패해도 true 반환 (최대한 정리는 시도했으므로)
-      return true;
-    }
+    return true;
   } catch (error) {
-    console.error("Failed to unlink Kakao account:", error);
-    // 실패해도 true 반환
+    console.error("[AuthService] 카카오 계정 연결 해제 오류:", error);
+    // 실패해도 true 반환 (최대한 정리는 시도했으므로)
     return true;
   }
 };
@@ -572,12 +526,12 @@ export const useGoogleAuth = () => {
   };
 
   /**
-   * Sign in with Kakao
+   * Sign in with Kakao - 메인 함수 (네이티브 방식 사용)
    * @returns {Promise<Object|null>} User data or null
    */
   const signInWithKakao = async () => {
     try {
-      console.log("Starting Kakao sign-in process");
+      console.log("Starting Kakao sign-in process (Native)");
       return await signInWithKakaoNative();
     } catch (error) {
       console.error("Kakao sign-in error:", error);
@@ -615,10 +569,8 @@ export const useGoogleAuth = () => {
       // Sign out from Kakao only if user was logged in with Kakao
       if (authProvider === "kakao") {
         try {
-          if (typeof kakaoLogout === "function") {
-            await kakaoLogout();
-            console.log("Signed out from Kakao");
-          }
+          await KakaoLoginService.logout();
+          console.log("Signed out from Kakao");
         } catch (error) {
           console.warn("Kakao sign-out error:", error);
         }
@@ -688,25 +640,14 @@ export const useGoogleAuth = () => {
             console.warn("Error removing Kakao local data:", localError);
           }
 
-          // 네이티브 연결 해제 시도 (실패해도 계속 진행)
+          // 네이티브 연결 해제 시도 (KakaoLoginService 사용)
           try {
-            if (typeof kakaoUnlink === "function") {
-              await kakaoUnlink();
-              console.log("Kakao account unlinked successfully");
-              console.log("카카오 계정 연동 해제: 성공");
-            }
+            const unlinkResult = await KakaoLoginService.unlink();
+            console.log("Kakao account unlinked successfully");
+            console.log("카카오 계정 연동 해제: 성공");
           } catch (unlinkError) {
-            // 토큰이 없는 경우 무시
-            if (
-              unlinkError.toString().includes("tokens don't exist") ||
-              unlinkError.message?.includes("tokens don't exist")
-            ) {
-              console.log("Kakao account already unlinked (no tokens)");
-              console.log("카카오 계정 연동 해제: 이미 해제됨");
-            } else {
-              console.error("Failed to unlink Kakao account:", unlinkError);
-              console.log("카카오 계정 연동 해제: 실패 (무시됨)");
-            }
+            console.error("Failed to unlink Kakao account:", unlinkError);
+            console.log("카카오 계정 연동 해제: 실패 (무시됨)");
           }
         } catch (error) {
           console.error("카카오 계정 연동 해제 실패:", error);

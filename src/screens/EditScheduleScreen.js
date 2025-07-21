@@ -1,18 +1,18 @@
 // src/screens/EditScheduleScreen.js
-import React, { useState, useEffect } from "react";
 import { useNavigation, useRoute } from "@react-navigation/native";
+import { useEffect, useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
   Alert,
   Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
-import { usePlanner } from "../context/PlannerContext";
 import AddScheduleModal from "../components/AddScheduleModal";
 import ScheduleItem from "../components/ScheduleItem";
+import { usePlanner } from "../context/PlannerContext";
 
 export default function EditScheduleScreen() {
   const navigation = useNavigation();
@@ -86,13 +86,7 @@ export default function EditScheduleScreen() {
       const updatedSchedules = daySchedules.map((s) =>
         s.id === schedule.id ? { ...schedule, isEditing: false } : s
       );
-
-      // 전체 스케줄에서 현재 날짜의 스케줄만 업데이트
-      const newAllSchedules = {
-        ...allSchedules,
-        [date]: updatedSchedules,
-      };
-
+      await updateSchedule(date, updatedSchedules); // ← 컨텍스트 저장
       setDaySchedules(updatedSchedules);
       setEditingSchedule(null);
     } catch (error) {
@@ -159,7 +153,7 @@ export default function EditScheduleScreen() {
       <AddScheduleModal
         visible={showAddModal}
         onClose={() => setShowAddModal(false)}
-        initialData={editingSchedule} // 편집할 일정 데이터 전달
+        editingSchedule={editingSchedule} // 편집할 일정 데이터 전달
         onSave={async (newSchedule) => {
           try {
             const scheduleToAdd = {

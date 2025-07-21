@@ -2,7 +2,7 @@
   "expo": {
     "name": "PlanEasy",
     "slug": "PlanEasy",
-    "version": "1.0.0",
+    "version": "16.0.0",
     "entryPoint": "./index.js",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -84,7 +84,7 @@
             "extraProguardRules": "-keep class com.google.firebase.** { *; }\n-keep class com.kakao.sdk.** { *; }\n-keep class com.navercorp.** { *; }",
             "buildToolsVersion": "35.0.0",
             "compileSdkVersion": 35,
-            "targetSdkVersion": 34,
+            "targetSdkVersion": 35,
             "usesCleartextTraffic": true
           }
         }

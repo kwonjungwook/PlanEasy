@@ -20,7 +20,16 @@ import * as SplashScreen from "expo-splash-screen";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as KakaoLogin from "@react-native-seoul/kakao-login";
 import NaverLoginService from "./src/services/NaverLoginService";
-import { initializeNotifications } from "./src/services/ImprovedFeedbackService";
+// 수정된 부분: NotificationService에서 필요한 함수들을 import
+import { 
+  setupAndroidChannels, 
+  requestNotificationPermissions,
+  defineBackgroundTask,
+  addNotificationListeners,
+  getExpoPushTokenAsync,
+  handleNotificationReceived,
+  handleNotificationResponse
+} from "./src/services/NotificationService";
 import { OVERLAY_PERMISSION } from "expo-modules-core";
 import * as IntentLauncher from "expo-intent-launcher";
 
@@ -65,15 +74,7 @@ import WeeklyTimetableScreen from "./src/screens/WeeklyTimetableScreen";
 import SubscriptionScreen from "./src/screens/SubscriptionScreen"; // New Subscription Screen
 import TermsAgreementScreen from "./src/screens/TermsAgreementScreen"; // New Subscription Screen
 
-// Notification service imports
-import {
-  defineBackgroundTask,
-  setupAndroidChannels,
-  addNotificationListeners,
-  getExpoPushTokenAsync,
-  handleNotificationReceived,
-  handleNotificationResponse,
-} from "./src/services/NotificationService";
+// Notification service imports - 이미 위에서 import됨
 import * as Notifications from "expo-notifications";
 
 let isNaverInitialized = false;
@@ -434,6 +435,40 @@ function AppNavigator() {
     }
   };
 
+  // 수정된 부분: 알림 시스템 초기화 함수
+  const initializeNotifications = async () => {
+    try {
+      console.log("알림 시스템 초기화 시작...");
+
+      // 백그라운드 태스크 정의
+      defineBackgroundTask();
+
+      // 알림 권한 요청
+      const hasPermission = await requestNotificationPermissions();
+      if (!hasPermission) {
+        console.log("알림 권한이 거부되었습니다.");
+        return false;
+      }
+
+      // Android 채널 설정
+      if (Platform.OS === "android") {
+        await setupAndroidChannels();
+      }
+
+      // 푸시 토큰 가져오기
+      const token = await getExpoPushTokenAsync();
+      if (token) {
+        console.log("Expo 푸시 알림 토큰:", token.data);
+      }
+
+      console.log("알림 시스템 초기화 완료");
+      return true;
+    } catch (error) {
+      console.error("알림 시스템 초기화 오류:", error);
+      return false;
+    }
+  };
+
   // 알림 설정 함수 - 컴포넌트 레벨에 선언
   const setupNotifications = async () => {
     try {
@@ -444,14 +479,8 @@ function AppNavigator() {
         await Notifications.getAllScheduledNotificationsAsync();
       console.log(`현재 예약된 알림 수: ${scheduledNotifications.length}`);
 
-      // 백그라운드 태스크 정의
-      defineBackgroundTask();
-
-      // Android 채널 설정
-      await setupAndroidChannels();
-
-      // 푸시 토큰 가져오기 (필요한 경우)
-      const token = await getExpoPushTokenAsync();
+      // 알림 시스템 초기화
+      await initializeNotifications();
 
       // 알림 리스너 등록
       notificationListenersRef.current = addNotificationListeners(
@@ -539,8 +568,6 @@ function AppNavigator() {
 
       // 알림 설정
       await setupNotifications();
-
-      await initializeNotifications();
 
       console.log("앱 초기화 완료");
       setAppIsReady(true);

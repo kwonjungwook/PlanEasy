@@ -1,32 +1,34 @@
 // src/screens/ScheduleScreen.js
 // 중앙 일정관리 메인화면 - 개선된 디자인 및 일관성 있는 내부 화면
 
-import React, { useState, useCallback, useEffect } from "react";
+import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import { LinearGradient } from "expo-linear-gradient";
+
+import { StatusBar } from "expo-status-bar";
+import { useCallback, useEffect, useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Platform,
+  Alert,
   BackHandler,
-  ScrollView,
   Dimensions,
   KeyboardAvoidingView,
-  Alert,
-  StatusBar,
+  Platform,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
-import { useFocusEffect, useNavigation } from "@react-navigation/native";
-import { Ionicons } from "@expo/vector-icons";
-import WeekendSchedule from "../components/WeekendSchedule";
-import DaySchedule from "../components/DaySchedule";
+
+import { ToastEventSystem } from "../components/common/AutoToast";
 import ConsumerCustom from "../components/ConsumerCustom";
+import DaySchedule from "../components/DaySchedule";
 import Guide from "../components/Guide";
+import WeekendSchedule from "../components/WeekendSchedule";
 import { useProgress } from "../context/ProgressContext";
 import { useSubscription } from "../context/SubscriptionContext";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { ToastEventSystem } from "../components/common/AutoToast";
-import { LinearGradient } from "expo-linear-gradient";
-import { COLORS, SPACING } from "../styles/commonStyles"; // 공통 스타일 임포트
+import { COLORS } from "../styles/commonStyles"; // 공통 스타일 임포트
 
 // 화면 높이를 가져옵니다.
 const windowHeight = Dimensions.get("window").height;
@@ -396,34 +398,36 @@ export default function ScheduleScreen() {
     // 이 화면에서만 상태바 스타일을 변경
     const unsubscribe = navigation.addListener("focus", () => {
       // 화면에 진입했을 때 상태바 스타일은 기본값 유지
-      StatusBar.setBarStyle("dark-content");
-      if (Platform.OS === "android") {
-        // 상태바 색상을 기본 색상으로 유지 (앱 색상이 침범하지 않도록)
-        StatusBar.setBackgroundColor("#FFFFFF");
-        StatusBar.setTranslucent(false);
-      }
     });
 
     // 화면에서 나갈 때 기본 스타일로 복원하기 위한 cleanup 함수
     return () => {
       unsubscribe();
       // 앱의 기본 상태바 스타일로 복원
-      StatusBar.setBarStyle("dark-content");
-      if (Platform.OS === "android") {
-        StatusBar.setBackgroundColor("#FFFFFF");
-        StatusBar.setTranslucent(false);
-      }
     };
   }, [navigation]);
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
-    >
-      {!selectedMode ? renderModeSelection() : renderModeContent()}
-    </KeyboardAvoidingView>
+    <View style={{ flex: 1, backgroundColor: "#ffffff" }}>
+      <StatusBar style="dark" backgroundColor="#ffffff" translucent={false} />
+
+      <SafeAreaView
+        style={[
+          styles.container,
+          {
+            paddingTop: Platform.OS === "android" ? 35 : 0, // 한 번만 적용
+          },
+        ]}
+      >
+        <KeyboardAvoidingView
+          style={styles.container} // paddingTop 제거
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+        >
+          {!selectedMode ? renderModeSelection() : renderModeContent()}
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </View>
   );
 }
 

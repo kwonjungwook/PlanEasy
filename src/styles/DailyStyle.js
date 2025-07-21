@@ -1,11 +1,10 @@
 // src/styles/DailyStyle.js
-import { StyleSheet, Platform } from "react-native";
+import { Platform, StyleSheet } from "react-native";
 
 const styles = StyleSheet.create({
   // 컨테이너 스타일
   container: {
     flex: 1,
-    backgroundColor: "#F8F9FA",
     height: "100%",
   },
 
@@ -102,6 +101,7 @@ const styles = StyleSheet.create({
     marginLeft: -4,
   },
 
+  // 🔥 D-Day 컨테이너 및 헤더 스타일
   goalContainerWrapper: {
     backgroundColor: "#fff",
     borderBottomWidth: 1,
@@ -115,6 +115,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 16,
     backgroundColor: "#fff",
+    minHeight: 50, // 프리뷰가 들어갈 공간 확보
   },
   goalHeaderLeft: {
     flex: 1,
@@ -130,6 +131,112 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#212529",
   },
+
+  // 🔥 슬롯 카운트 관련 스타일 (PRO 버전 포함)
+  slotCountContainer: {
+    backgroundColor: "#E9ECEF",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+    marginLeft: 8,
+  },
+  slotCountContainerPro: {
+    backgroundColor: "#FFB74D", // 황토색 배경
+    borderWidth: 1,
+    borderColor: "#FF9800",
+    shadowColor: "#FF9800",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.4,
+    shadowRadius: 2,
+    elevation: 3,
+  },
+  slotCountText: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#495057",
+  },
+  slotCountTextPro: {
+    color: "#FFFFFF",
+    fontWeight: "bold",
+    textShadowColor: "rgba(0, 0, 0, 0.3)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 1,
+  },
+
+  // 사용하지 않은 슬롯 표시
+  unusedSlotIndicator: {
+    backgroundColor: "#28A745",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    marginLeft: 4,
+  },
+  unusedSlotText: {
+    fontSize: 9,
+    fontWeight: "bold",
+    color: "#FFFFFF",
+  },
+  // 🔥 D-Day 컨테이너 및 헤더 스타일 섹션에 추가
+  goalHeaderClickable: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  // 🔥 D-Day 프리뷰 스타일 섹션에서 수정
+  ddayPreviewScrollView: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  // 🔥 D-Day 프리뷰 스타일 (핵심 기능)
+  ddayPreviewContainer: {
+    marginLeft: 12,
+    flex: 1,
+    height: 32,
+    width: "100%", // 너비 명시
+  },
+
+  ddayPreviewScrollContent: {
+    alignItems: "center",
+    paddingRight: 32, // 오른쪽 여백 더 증가로 스크롤 개선
+    minWidth: "100%", // 최소 너비 설정
+  },
+  ddayPreviewItem: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 14,
+    marginRight: 6,
+    backgroundColor: "#F8F9FA",
+    borderWidth: 1.5,
+    borderColor: "#E9ECEF",
+    flexDirection: "row",
+    alignItems: "center",
+    minWidth: 100, // 최소 너비로 변경하여 유연성 증가
+    maxWidth: 120, // 최대 너비 설정
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.08,
+        shadowRadius: 2,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
+  },
+  ddayPreviewDDay: {
+    fontSize: 10,
+    fontWeight: "700",
+    marginRight: 4, // 간격 줄임
+    minWidth: 25, // D-Day 텍스트 최소 너비
+  },
+  ddayPreviewTitle: {
+    fontSize: 9,
+    fontWeight: "500",
+    flex: 1,
+  },
+
+  // 버튼 스타일
   addGoalButtonCute: {
     backgroundColor: "#FFB74D",
     paddingHorizontal: 10,
@@ -150,6 +257,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#868E96",
   },
+
+  // 목표 콘텐츠 컨테이너
   goalContentContainer: {
     overflow: "hidden",
   },
@@ -160,6 +269,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingRight: 12,
   },
+
+  // 목표 아이템 스타일
   goalItem: {
     borderRadius: 12,
     padding: 12,
@@ -197,6 +308,31 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: "#868E96",
   },
+
+  // 🔥 빈 목표 슬롯 스타일
+  emptyGoalItem: {
+    borderRadius: 12,
+    padding: 12,
+    marginRight: 12,
+    width: 160,
+    borderWidth: 2,
+    borderColor: "#E9ECEF",
+    borderStyle: "dashed",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F8F9FA",
+  },
+  emptyGoalIcon: {
+    fontSize: 24,
+    color: "#ADB5BD",
+    marginBottom: 4,
+  },
+  emptyGoalText: {
+    fontSize: 12,
+    color: "#6C757D",
+    fontWeight: "500",
+  },
+
   emptyGoalsContainer: {
     padding: 12,
     alignItems: "center",
@@ -308,11 +444,11 @@ const styles = StyleSheet.create({
 
   // 메뉴 아이콘 스타일
   moreOptionsButton: {
-    padding: 8, // 패딩 증가
+    padding: 8,
     position: "absolute",
     right: 8,
     top: 8,
-    zIndex: 2, // 상위 레이어에 표시
+    zIndex: 2,
   },
   moreOptionsContainer: {
     height: 24,
@@ -348,16 +484,16 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
     elevation: 5,
-    minWidth: 120, // 최소 너비 설정
-    zIndex: 1000, // 가장 상위에 표시
+    minWidth: 120,
+    zIndex: 1000,
   },
   contextMenuItem: {
-    paddingVertical: 12, // 클릭 영역 확대
+    paddingVertical: 12,
     paddingHorizontal: 16,
     borderRadius: 4,
   },
   contextMenuItemText: {
-    fontSize: 16, // 글꼴 크기 확대
+    fontSize: 16,
     color: "#212529",
   },
   deleteMenuItemText: {
@@ -392,6 +528,12 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "600",
     color: "#212529",
+    marginBottom: 8,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: "600",
+    color: "rgba(255, 134, 107, 0.9)",
     marginBottom: 8,
   },
   emptySubText: {
@@ -507,8 +649,6 @@ const styles = StyleSheet.create({
     color: "#495057",
   },
 
-  // DailyStyle.js에 다음 토스트 스타일로 교체하세요
-
   // 토스트 스타일
   toastContainer: {
     position: "absolute",
@@ -521,8 +661,8 @@ const styles = StyleSheet.create({
     position: "relative",
     borderRadius: 12,
     marginBottom: 8,
-    height: 40, // 높이 명시적 지정
-    overflow: "hidden", // 내용이 넘치지 않도록 설정
+    height: 40,
+    overflow: "hidden",
     ...Platform.select({
       ios: {
         shadowColor: "#000",
@@ -545,7 +685,7 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   toastContent: {
-    position: "absolute", // 절대 위치로 변경
+    position: "absolute",
     top: 0,
     left: 0,
     right: 0,
@@ -567,7 +707,7 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
 
-  // 토스트 타입별 배경색 - 완전 불투명하게 변경
+  // 토스트 타입별 배경색
   successToast: {
     backgroundColor: "rgb(80, 206, 187)",
   },
@@ -605,31 +745,8 @@ const styles = StyleSheet.create({
     fontWeight: "normal",
   },
   addGoalButtonTextSpecial: {
-    color: "#FF9500", // 주황색으로 가격 강조
+    color: "#FF9500",
     fontWeight: "bold",
-  },
-
-  subscribedBadge: {
-    backgroundColor: "#FFB74D", // 프리미엄 느낌의 주황색/골드 계열
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    marginLeft: 8,
-    borderWidth: 1,
-    borderColor: "#FF9800",
-    shadowColor: "#FF9800",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.4,
-    shadowRadius: 2,
-    elevation: 3,
-  },
-  subscribedText: {
-    color: "#FFFFFF",
-    fontSize: 10,
-    fontWeight: "bold",
-    textShadowColor: "rgba(0, 0, 0, 0.3)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 1,
   },
 });
 

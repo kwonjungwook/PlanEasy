@@ -1,15 +1,20 @@
 // src/services/NaverLoginService.js
-import { NativeModules, Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { NativeModules } from "react-native";
 const { NaverLoginModule } = NativeModules;
 
-console.log("모든 네이티브 모듈:", Object.keys(NativeModules));
-console.log("네이버 모듈:", NaverLoginModule);
+if (__DEV__) {
+  console.log("모든 네이티브 모듈:", Object.keys(NativeModules));
+  console.log("네이버 모듈:", NaverLoginModule);
 
-// 네이티브 모듈 상태 확인
-console.log("네이티브 모듈 상태:", NaverLoginModule ? "있음" : "없음");
-if (NaverLoginModule) {
-  console.log("사용 가능한 메서드:", Object.keys(NaverLoginModule).join(", "));
+  // 네이티브 모듈 상태 확인
+  console.log("네이티브 모듈 상태:", NaverLoginModule ? "있음" : "없음");
+  if (NaverLoginModule) {
+    console.log(
+      "사용 가능한 메서드:",
+      Object.keys(NaverLoginModule).join(", ")
+    );
+  }
 }
 
 const NAVER_CONFIG = {
@@ -138,6 +143,13 @@ const NaverLoginService = {
 
       return result;
     } catch (error) {
+      // 사용자 취소인 경우 에러 로그 출력하지 않고 null 반환
+      if (error.message && error.message.includes("user_cancel")) {
+        console.log("[NaverLoginService] 사용자가 로그인을 취소했습니다");
+        return null; // 취소는 null 반환
+      }
+
+      // 실제 에러인 경우에만 에러 로그 출력
       console.error("[NaverLoginService] 로그인 처리 오류:", error);
       throw error;
     }
@@ -165,7 +177,18 @@ const NaverLoginService = {
   // 간소화된 로그인 함수 (AuthService.js에서 호출)
   loginSimple: async () => {
     console.log("간소화된 네이버 로그인 메서드 사용");
-    return await NaverLoginService.login();
+    try {
+      return await NaverLoginService.login();
+    } catch (error) {
+      // 사용자 취소인 경우 에러 로그 출력하지 않고 null 반환
+      if (error.message && error.message.includes("user_cancel")) {
+        console.log("[NaverLoginService] 간소화된 로그인: 사용자 취소");
+        return null;
+      }
+
+      // 실제 에러인 경우 다시 throw
+      throw error;
+    }
   },
 
   // 로그아웃 (동작 확인 및 로컬 스토리지 정리)

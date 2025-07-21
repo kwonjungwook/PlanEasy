@@ -1,22 +1,26 @@
 //screens/LoginScreens.js
-import React, { useState, useEffect, useRef } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  Alert,
-  Modal,
-  ToastAndroid,
-  NativeModules,
-} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useAuth } from "../context/AuthContext";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { StatusBar } from "expo-status-bar";
+import { useEffect, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Modal,
+  NativeModules,
+  Platform,
+  StatusBar as RNStatusBar,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  ToastAndroid,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { useAuth } from "../context/AuthContext";
 import NaverLoginService from "../services/NaverLoginService";
+// import KakaoLoginWebView from "../components/KakaoLoginWebView"; // 네이티브 방식으로 인해 사용 안 함
 
 // 사용자 데이터 스토리지 키 상수
 const USER_AUTH_KEY = "@user_auth_data";
@@ -68,6 +72,8 @@ const LoginScreen = ({ route, navigation }) => {
   const focusListenerRef = useRef(null);
   // 로딩 타임아웃 처리를 위한 변수
   const [loadingTimeout, setLoadingTimeout] = useState(null);
+  // 카카오 WebView 상태 제거 (네이티브 방식 사용)
+  // const [showKakaoWebView, setShowKakaoWebView] = useState(false);
 
   // 로그인 성공 시 네비게이션 처리 부분을 찾아서 이렇게 수정하세요
   useEffect(() => {
@@ -385,12 +391,21 @@ const LoginScreen = ({ route, navigation }) => {
           return true;
         }
       } else {
-        console.error("네이버 로그인 결과 없음");
+        console.log("네이버 로그인 결과 없음");
         setLoginStatus("네이버 로그인에 실패했습니다. 다시 시도해주세요.");
         setLocalLoading(false);
         return false;
       }
     } catch (error) {
+      // 사용자 취소인 경우 에러 로그 출력하지 않고 조용히 처리
+      if (error.message && error.message.includes("user_cancel")) {
+        console.log("네이버 로그인 사용자 취소");
+        setLoginStatus("로그인이 취소되었습니다.");
+        setLocalLoading(false);
+        return null; // 취소는 null 반환
+      }
+
+      // 실제 에러인 경우에만 에러 로그 출력
       console.error("네이버 로그인 오류:", error);
       console.error("오류 타입:", typeof error);
       console.error("오류 메시지:", error.message);
@@ -408,24 +423,25 @@ const LoginScreen = ({ route, navigation }) => {
     }
   };
 
-  // 카카오 로그인 처리
+  // 카카오 로그인 처리 (네이티브 방식)
   const handleKakaoSignIn = async () => {
     try {
       setLoginStatus("카카오 로그인 준비 중...");
       setLocalLoading(true);
-      setNavigationAttempted(false); // 새 로그인 시도에 대비해 재설정
+      setNavigationAttempted(false);
 
       // UI 피드백 지연
       await new Promise((resolve) => setTimeout(resolve, 300));
 
       setLoginStatus("카카오 로그인 진행 중...");
-      console.log("Attempting Kakao login...");
+      console.log("네이티브 방식 카카오 로그인 시작...");
 
+      // AuthContext의 loginWithKakao 함수 호출
       const success = await loginWithKakao();
-      console.log(`Kakao login result: ${success ? "Success" : "Failed"}`);
+      console.log(`카카오 로그인 결과: ${success ? "성공" : "실패"}`);
 
       if (success === null) {
-        // 사용자 취소
+        // 사용자가 로그인 취소
         setLoginStatus("로그인이 취소되었습니다.");
         setLocalLoading(false);
         return;
@@ -441,13 +457,21 @@ const LoginScreen = ({ route, navigation }) => {
     } catch (error) {
       console.error("Kakao login error:", error);
       setLoginStatus("카카오 로그인 오류가 발생했습니다.");
-      Alert.alert(
-        "로그인 오류",
-        "카카오 로그인 중 문제가 발생했습니다. 다시 시도해주세요."
-      );
+
+      // 네이티브 모듈 관련 에러 메시지 개선
+      let errorMessage = "카카오 로그인 중 문제가 발생했습니다.";
+      if (error.message && error.message.includes("모듈을 찾을 수 없습니다")) {
+        errorMessage =
+          "카카오 로그인 모듈이 설치되지 않았습니다. 앱을 재빌드해주세요.";
+      }
+
+      Alert.alert("로그인 오류", errorMessage, [{ text: "확인" }]);
       setLocalLoading(false);
     }
   };
+
+  // 카카오 WebView 관련 함수들 제거 (더 이상 사용하지 않음)
+  // const handleKakaoLoginSuccess는 삭제
 
   // 에러 표시
   useEffect(() => {
@@ -457,111 +481,134 @@ const LoginScreen = ({ route, navigation }) => {
   }, [error]);
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-    >
-      {/* 닫기 버튼 */}
-      <TouchableOpacity
-        style={styles.closeButton}
-        onPress={() => navigation.goBack()}
+    <View style={{ flex: 1, backgroundColor: "#ffffff" }}>
+      <StatusBar style="dark" backgroundColor="#ffffff" translucent={false} />
+
+      <SafeAreaView
+        style={[
+          styles.container,
+          {
+            paddingTop:
+              Platform.OS === "android" ? RNStatusBar.currentHeight || 35 : 0,
+          },
+        ]}
       >
-        <Ionicons name="close" size={28} color="#333" />
-      </TouchableOpacity>
+        <KeyboardAvoidingView
+          style={styles.container}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
+          {/* 닫기 버튼 */}
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Ionicons name="close" size={28} color="#333" />
+          </TouchableOpacity>
 
-      <View style={styles.content}>
-        {/* 로고와 타이틀 */}
-        <View style={styles.logoContainer}>
-          <View style={styles.logoCircle}>
-            <Text style={styles.logoText}>P</Text>
+          <View style={styles.content}>
+            {/* 로고와 타이틀 */}
+            <View style={styles.logoContainer}>
+              <View style={styles.logoCircle}>
+                <Text style={styles.logoText}>P</Text>
+              </View>
+              <Text style={styles.appTitle}>플랜이지</Text>
+              <Text style={styles.subtitle}>계획을 쉽게, 하루를 즐겁게</Text>
+            </View>
+
+            {/* 소셜 로그인 버튼 */}
+            <View style={styles.socialButtonsContainer}>
+              <Text style={styles.socialTitle}>소셜 계정으로 로그인</Text>
+
+              {/* Google 로그인 버튼 */}
+              <TouchableOpacity
+                style={styles.googleButton}
+                onPress={handleGoogleSignIn}
+                disabled={localLoading || authLoading}
+              >
+                {localLoading || authLoading ? (
+                  <ActivityIndicator size="small" color="#EA4335" />
+                ) : (
+                  <>
+                    <Ionicons name="logo-google" size={22} color="#EA4335" />
+                    <Text style={styles.googleButtonText}>
+                      Google로 계속하기
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+
+              {/* 네이버 로그인 버튼 */}
+              <TouchableOpacity
+                style={styles.naverButton}
+                onPress={handleNaverSignIn}
+                disabled={localLoading || authLoading}
+              >
+                {localLoading || authLoading ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <>
+                    <View style={styles.naverLogo}>
+                      <Text style={styles.naverLogoText}>N</Text>
+                    </View>
+                    <Text style={styles.naverButtonText}>
+                      네이버로 계속하기
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+
+              {/* 카카오 로그인 버튼 */}
+              <TouchableOpacity
+                style={styles.kakaoButton}
+                onPress={handleKakaoSignIn}
+                disabled={localLoading || authLoading}
+              >
+                {localLoading || authLoading ? (
+                  <ActivityIndicator size="small" color="#391B1B" />
+                ) : (
+                  <>
+                    <Ionicons name="chatbubble" size={22} color="#391B1B" />
+                    <Text style={styles.kakaoButtonText}>
+                      카카오로 계속하기
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+
+            {/* 로그인 상태 표시 */}
+            {loginStatus ? (
+              <Text style={styles.statusText}>{loginStatus}</Text>
+            ) : null}
+
+            {/* 약관 및 개인정보 처리방침 */}
+            <View style={styles.termsContainer}>
+              <Text style={styles.termsText}>
+                로그인 시 <Text style={styles.termsLink}>서비스 이용약관</Text>{" "}
+                및 <Text style={styles.termsLink}>개인정보 처리방침</Text>에
+                동의합니다
+              </Text>
+            </View>
           </View>
-          <Text style={styles.appTitle}>플랜이지</Text>
-          <Text style={styles.subtitle}>계획을 쉽게, 하루를 즐겁게</Text>
-        </View>
 
-        {/* 소셜 로그인 버튼 */}
-        <View style={styles.socialButtonsContainer}>
-          <Text style={styles.socialTitle}>소셜 계정으로 로그인</Text>
-
-          {/* Google 로그인 버튼 */}
-          <TouchableOpacity
-            style={styles.googleButton}
-            onPress={handleGoogleSignIn}
-            disabled={localLoading || authLoading}
+          {/* 로딩 모달 오버레이 */}
+          <Modal
+            visible={localLoading || authLoading}
+            transparent={true}
+            animationType="fade"
           >
-            {localLoading || authLoading ? (
-              <ActivityIndicator size="small" color="#EA4335" />
-            ) : (
-              <>
-                <Ionicons name="logo-google" size={22} color="#EA4335" />
-                <Text style={styles.googleButtonText}>Google로 계속하기</Text>
-              </>
-            )}
-          </TouchableOpacity>
+            <View style={styles.loadingOverlay}>
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#50cebb" />
+                <Text style={styles.loadingText}>로그인 중...</Text>
+              </View>
+            </View>
+          </Modal>
 
-          {/* 네이버 로그인 버튼 */}
-          <TouchableOpacity
-            style={styles.naverButton}
-            onPress={handleNaverSignIn}
-            disabled={localLoading || authLoading}
-          >
-            {localLoading || authLoading ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <>
-                <View style={styles.naverLogo}>
-                  <Text style={styles.naverLogoText}>N</Text>
-                </View>
-                <Text style={styles.naverButtonText}>네이버로 계속하기</Text>
-              </>
-            )}
-          </TouchableOpacity>
-
-          {/* 카카오 로그인 버튼 */}
-          <TouchableOpacity
-            style={styles.kakaoButton}
-            onPress={handleKakaoSignIn}
-            disabled={localLoading || authLoading}
-          >
-            {localLoading || authLoading ? (
-              <ActivityIndicator size="small" color="#391B1B" />
-            ) : (
-              <>
-                <Ionicons name="chatbubble" size={22} color="#391B1B" />
-                <Text style={styles.kakaoButtonText}>카카오로 계속하기</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        </View>
-
-        {/* 로그인 상태 표시 */}
-        {loginStatus ? (
-          <Text style={styles.statusText}>{loginStatus}</Text>
-        ) : null}
-
-        {/* 약관 및 개인정보 처리방침 */}
-        <View style={styles.termsContainer}>
-          <Text style={styles.termsText}>
-            로그인 시 <Text style={styles.termsLink}>서비스 이용약관</Text> 및{" "}
-            <Text style={styles.termsLink}>개인정보 처리방침</Text>에 동의합니다
-          </Text>
-        </View>
-      </View>
-
-      {/* 로딩 모달 오버레이 */}
-      <Modal
-        visible={localLoading || authLoading}
-        transparent={true}
-        animationType="fade"
-      >
-        <View style={styles.loadingOverlay}>
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#50cebb" />
-            <Text style={styles.loadingText}>로그인 중...</Text>
-          </View>
-        </View>
-      </Modal>
-    </KeyboardAvoidingView>
+          {/* 카카오 WebView 모달 제거 (네이티브 방식 사용) */}
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </View>
   );
 };
 

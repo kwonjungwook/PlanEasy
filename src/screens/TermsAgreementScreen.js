@@ -1,19 +1,18 @@
 // src/screens/TermsAgreementScreen.js
-import React, { useState } from "react";
+import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  Switch,
-  TouchableOpacity,
+  Alert,
   Modal,
   SafeAreaView,
-  Alert,
-  StatusBar,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Ionicons } from "@expo/vector-icons";
 
 const TermsAgreementScreen = ({ route, navigation }) => {
   const { returnTo, userData } = route.params || { returnTo: "Main" };
@@ -260,7 +259,6 @@ const TermsAgreementScreen = ({ route, navigation }) => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
       <View style={styles.container}>
         <Text style={styles.title}>이용약관 동의</Text>
         <Text style={styles.subtitle}>

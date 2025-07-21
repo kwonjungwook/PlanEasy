@@ -1,21 +1,20 @@
 // src/screens/CalendarEditor.js
-import React, { useState, useEffect } from "react";
 import { useNavigation, useRoute } from "@react-navigation/native";
+
+import { useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
   Alert,
+  Dimensions,
   Platform,
   SafeAreaView,
-  StatusBar,
-  Dimensions,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
-import { usePlanner } from "../context/PlannerContext";
 import AddScheduleModal from "../components/AddScheduleModal";
-import ScheduleItem from "../components/ScheduleItem";
+import { usePlanner } from "../context/PlannerContext";
 
 const { width, height } = Dimensions.get("window");
 
@@ -218,7 +217,6 @@ export default function EditScheduleScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor={COLORS.light} />
       <View style={styles.container}>
         {/* 헤더 */}
         <View style={styles.header}>

@@ -1,22 +1,25 @@
 // src/screens/PointsScreen.js - 수정된 버전
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  SafeAreaView,
-  Alert,
-  ActivityIndicator,
-  Modal,
-  FlatList,
-} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useProgress } from "../context/ProgressContext";
-import { ToastEventSystem } from "../components/common/AutoToast";
-import { getRecentColorPurchases } from "../utils/pointHistoryManager";
-import React, { useState, useEffect } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { StatusBar } from "expo-status-bar";
+import { useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Modal,
+  Platform,
+  StatusBar as RNStatusBar,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { ToastEventSystem } from "../components/common/AutoToast";
+import { useProgress } from "../context/ProgressContext";
+import { getRecentColorPurchases } from "../utils/pointHistoryManager";
 
 const UNLOCKED_COLORS_STORAGE_KEY = "unlocked_schedule_colors";
 
@@ -365,15 +368,6 @@ const PointsScreen = ({ navigation }) => {
       basePoints: "10-70P",
       bonus: "모든 미션 완료 시 추가 보너스",
     },
-    {
-      icon: "🎯",
-      name: "일일/주간 미션",
-      description: "다양한 미션을 통해 추가 포인트 획득",
-      cost: "최대 100P 보너스",
-      buttonText: "미션 보기",
-      action: () => navigation.navigate("Missions"),
-      highlight: true,
-    },
   ];
 
   // 포인트 사용처 목록
@@ -428,196 +422,128 @@ const PointsScreen = ({ navigation }) => {
   ];
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* 헤더 */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        >
-          <Ionicons name="arrow-back" size={24} color="#333" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>포인트 센터</Text>
-        <View style={styles.headerRight}>
-          <TouchableOpacity onPress={() => navigation.navigate("FAQ")}>
-            <Ionicons name="help-circle-outline" size={24} color="#333" />
-          </TouchableOpacity>
-        </View>
-      </View>
+    <View style={{ flex: 1, backgroundColor: "#ffffff" }}>
+      <StatusBar style="dark" backgroundColor="#ffffff" translucent={false} />
 
-      <ScrollView style={styles.scrollView}>
-        {/* 포인트 카드 */}
-        <View style={styles.pointCard}>
-          <View style={styles.pointCardTop}>
-            <View style={styles.pointInfo}>
-              <Text style={styles.pointLabel}>보유 포인트</Text>
-              <Text style={styles.pointValue}>
-                {points}
-                <Text style={styles.pointUnit}>P</Text>
-              </Text>
-            </View>
-            <View style={styles.pointIllustration}>
-              <Text style={styles.pointEmoji}>💰</Text>
-            </View>
-          </View>
-          <View style={styles.pointCardBottom}>
-            <View style={styles.statItem}>
-              <Text style={styles.statLabel}>레벨</Text>
-              <Text style={styles.statValue}>Lv.{level}</Text>
-            </View>
-            <View style={styles.divider} />
-            <View style={styles.statItem}>
-              <Text style={styles.statLabel}>출석</Text>
-              <Text style={styles.statValue}>{streak}일 연속</Text>
-            </View>
-            <View style={styles.divider} />
-            <View style={styles.statItem}>
-              <Text style={styles.statLabel}>완료 일정</Text>
-              <Text style={styles.statValue}>{completedTasks}개</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* D-Day 상태 카드 */}
-        <View style={styles.ddayStatusCard}>
-          <View style={styles.ddayStatusHeader}>
-            <Text style={styles.ddayStatusTitle}>
-              <Text style={styles.ddayEmoji}>🎯</Text> D-Day 슬롯 상태
-            </Text>
-          </View>
-          <View style={styles.ddayStatusContent}>
-            <View style={styles.ddayStatusItem}>
-              <Text style={styles.ddayStatusLabel}>전체 슬롯</Text>
-              <Text style={styles.ddayStatusValue}>{ddaySlots}개</Text>
-            </View>
-            <View style={styles.ddayStatusDivider} />
-            <View style={styles.ddayStatusItem}>
-              <Text style={styles.ddayStatusLabel}>사용 가능한 슬롯</Text>
-              <Text style={styles.ddayStatusValue}>
-                {unusedDDaySlots}개
-                {unusedDDaySlots > 0 && (
-                  <Text style={styles.ddayStatusHint}> (홈에서 사용 가능)</Text>
-                )}
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        {/* 획득 방법 섹션 */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
-            <Text style={styles.sectionEmoji}>⚡</Text> 포인트 획득 방법
-          </Text>
-
-          {pointSources.map((source, index) => (
-            <View key={index} style={styles.pointItem}>
-              <View style={styles.pointItemIcon}>
-                <Text style={styles.itemEmoji}>{source.icon}</Text>
-              </View>
-              <View style={styles.pointItemContent}>
-                <Text style={styles.pointItemTitle}>{source.name}</Text>
-                <Text style={styles.pointItemDesc}>{source.description}</Text>
-                <View style={styles.pointItemReward}>
-                  <Text style={styles.basePoints}>{source.basePoints}</Text>
-                  {source.bonus && (
-                    <Text style={styles.bonusPoints}>{source.bonus}</Text>
-                  )}
-                </View>
-              </View>
-            </View>
-          ))}
-        </View>
-
-        {/* 사용처 섹션 */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
-            <Text style={styles.sectionEmoji}>🛍️</Text> 포인트 사용처
-          </Text>
-
-          {pointUses.map((item, index) => (
-            <View
-              key={index}
-              style={[
-                styles.pointShopItem,
-                item.highlight && styles.shopItemHighlight,
-              ]}
-            >
-              <View style={styles.shopItemTop}>
-                <View style={styles.shopItemIconContainer}>
-                  <Text style={styles.shopItemIcon}>{item.icon}</Text>
-                  {item.badgeCount && (
-                    <View style={styles.shopItemBadge}>
-                      <Text style={styles.shopItemBadgeText}>
-                        {item.badgeCount}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-                <View style={styles.shopItemInfo}>
-                  <Text style={styles.shopItemTitle}>{item.name}</Text>
-                  <Text style={styles.shopItemDesc}>{item.description}</Text>
-                  <Text style={styles.shopItemCost}>{item.cost}</Text>
-                </View>
-                {item.highlight && (
-                  <View style={styles.newFeatureBadge}>
-                    <Text style={styles.newFeatureText}>NEW</Text>
-                  </View>
-                )}
-              </View>
-
-              <TouchableOpacity
-                style={[
-                  styles.shopItemButton,
-                  item.disabled && styles.shopItemButtonDisabled,
-                  item.highlight && { backgroundColor: "#007AFF" },
-                ]}
-                onPress={item.action}
-                disabled={item.disabled || (index === 0 && loading)}
-              >
-                {loading && index === 0 ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <Text
-                    style={[
-                      styles.shopItemButtonText,
-                      item.disabled && styles.shopItemButtonTextDisabled,
-                    ]}
-                  >
-                    {item.comingSoon ? "곧 출시" : item.buttonText}
-                  </Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          ))}
-        </View>
-
-        {/* 히스토리 */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
-            <Text style={styles.sectionEmoji}>📊</Text> 포인트 히스토리
-          </Text>
-
-          {/* 최근 색상 구매 내역 */}
-          {renderRecentColorPurchases()}
-
+      <SafeAreaView
+        style={[
+          styles.container,
+          {
+            paddingTop:
+              Platform.OS === "android" ? RNStatusBar.currentHeight || 35 : 0,
+          },
+        ]}
+      >
+        {/* 헤더 */}
+        <View style={styles.header}>
           <TouchableOpacity
-            style={styles.historyButton}
-            onPress={() => navigation.navigate("PointHistory")}
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
           >
-            <Text style={styles.historyButtonText}>
-              포인트 내역 보기{" "}
-              <Ionicons name="chevron-forward" size={14} color="#007AFF" />
-            </Text>
+            <Ionicons name="arrow-back" size={24} color="#333" />
           </TouchableOpacity>
+          <Text style={styles.headerTitle}>포인트 센터</Text>
+          <View style={styles.headerRight}>
+            <TouchableOpacity onPress={() => navigation.navigate("FAQ")}>
+              <Ionicons name="help-circle-outline" size={24} color="#333" />
+            </TouchableOpacity>
+          </View>
         </View>
 
-        {/* 하단 여백 */}
-        <View style={{ height: 40 }} />
-      </ScrollView>
+        <ScrollView style={styles.scrollView}>
+          {/* 포인트 카드 */}
+          <View style={styles.pointCard}>
+            <View style={styles.pointCardTop}>
+              <View style={styles.pointInfo}>
+                <Text style={styles.pointLabel}>보유 포인트</Text>
+                <Text style={styles.pointValue}>
+                  {points}
+                  <Text style={styles.pointUnit}>P</Text>
+                </Text>
+              </View>
+              <View style={styles.pointIllustration}>
+                <Text style={styles.pointEmoji}>💰</Text>
+              </View>
+            </View>
+            <View style={styles.pointCardBottom}>
+              <View style={styles.statItem}>
+                <Text style={styles.statLabel}>레벨</Text>
+                <Text style={styles.statValue}>Lv.{level}</Text>
+              </View>
+              <View style={styles.divider} />
+              <View style={styles.statItem}>
+                <Text style={styles.statLabel}>출석</Text>
+                <Text style={styles.statValue}>{streak}일 연속</Text>
+              </View>
+              <View style={styles.divider} />
+              <View style={styles.statItem}>
+                <Text style={styles.statLabel}>완료 일정</Text>
+                <Text style={styles.statValue}>{completedTasks}개</Text>
+              </View>
+            </View>
+          </View>
 
-      {/* 마지막에 모달 추가 */}
-      {renderColorShowcaseModal()}
-    </SafeAreaView>
+          {/* D-Day 상태 카드 */}
+          <View style={styles.ddayStatusCard}>
+            <View style={styles.ddayStatusHeader}>
+              <Text style={styles.ddayStatusTitle}>
+                <Text style={styles.ddayEmoji}>🎯</Text> D-Day 슬롯 상태
+              </Text>
+            </View>
+            <View style={styles.ddayStatusContent}>
+              <View style={styles.ddayStatusItem}>
+                <Text style={styles.ddayStatusLabel}>전체 슬롯</Text>
+                <Text style={styles.ddayStatusValue}>{ddaySlots}개</Text>
+              </View>
+              <View style={styles.ddayStatusDivider} />
+              <View style={styles.ddayStatusItem}>
+                <Text style={styles.ddayStatusLabel}>사용 가능한 슬롯</Text>
+                <Text style={styles.ddayStatusValue}>
+                  {unusedDDaySlots}개
+                  {unusedDDaySlots > 0 && (
+                    <Text style={styles.ddayStatusHint}>
+                      {" "}
+                      (홈에서 사용 가능)
+                    </Text>
+                  )}
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {/* 획득 방법 섹션 */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>
+              <Text style={styles.sectionEmoji}>⚡</Text> 포인트 획득 방법
+            </Text>
+
+            {pointSources.map((source, index) => (
+              <View key={index} style={styles.pointItem}>
+                <View style={styles.pointItemIcon}>
+                  <Text style={styles.itemEmoji}>{source.icon}</Text>
+                </View>
+                <View style={styles.pointItemContent}>
+                  <Text style={styles.pointItemTitle}>{source.name}</Text>
+                  <Text style={styles.pointItemDesc}>{source.description}</Text>
+                  <View style={styles.pointItemReward}>
+                    <Text style={styles.basePoints}>{source.basePoints}</Text>
+                    {source.bonus && (
+                      <Text style={styles.bonusPoints}>{source.bonus}</Text>
+                    )}
+                  </View>
+                </View>
+              </View>
+            ))}
+          </View>
+
+          {/* 하단 여백 */}
+          <View style={{ height: 40 }} />
+        </ScrollView>
+
+        {/* 마지막에 모달 추가 */}
+        {renderColorShowcaseModal()}
+      </SafeAreaView>
+    </View>
   );
 };
 

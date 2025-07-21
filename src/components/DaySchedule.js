@@ -1,20 +1,18 @@
-import React, { useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
+import { LinearGradient } from "expo-linear-gradient";
+import { useCallback, useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  Platform,
   Alert,
+  BackHandler,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { usePlanner } from "../context/PlannerContext";
 import AddScheduleModal from "./AddScheduleModal";
-import { BackHandler } from "react-native";
-import { useNavigation, useFocusEffect } from "@react-navigation/native";
-import { useCallback } from "react";
-import { SafeAreaView } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
 
 // 상수 유지
 const DAYS = [
@@ -1032,7 +1030,7 @@ export default function DaySchedule() {
                                             selectedDay
                                           ].filter((s) => s.id !== schedule.id),
                                         };
-                                        await saveDailyScheduleOnly(
+                                        await saveDailySchedule(
                                           updatedSchedules
                                         );
                                       },

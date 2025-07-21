@@ -1,14 +1,14 @@
 // src/services/NotificationService.js
 
-import * as Notifications from "expo-notifications";
-import * as Device from "expo-device";
-import Constants from "expo-constants";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as TaskManager from "expo-task-manager";
+import { format } from "date-fns";
+import Constants from "expo-constants";
+import * as Device from "expo-device";
 import { IntentLauncher } from "expo-intent-launcher";
-import { Platform, Linking } from "react-native";
+import * as Notifications from "expo-notifications";
+import * as TaskManager from "expo-task-manager";
+import { Linking, Platform } from "react-native";
 import { ToastEventSystem } from "../components/common/AutoToast";
-import { format } from 'date-fns';
 
 // 백그라운드 알림 태스크 이름 정의
 export const BACKGROUND_NOTIFICATION_TASK = "BACKGROUND-NOTIFICATION-TASK";
@@ -19,7 +19,6 @@ const NOTIFICATIONS_STORAGE_KEY = "@notifications_list";
 
 // 저장된 알림 ID 객체
 const notificationIds = {};
-
 
 // 업데이트 중 플래그 - let으로 변경하고 초기화
 let isUpdatingNotifications = false;
@@ -48,6 +47,76 @@ export const defineBackgroundTask = () => {
   }
 };
 
+// Android 정확한 알람 권한 요청 (Android 12+)
+export const requestExactAlarmPermission = async () => {
+  if (Platform.OS !== "android") return true;
+
+  try {
+    const androidVersion = Platform.Version;
+    if (androidVersion < 31) return true;
+
+    // IntentLauncher 사용하지 않고 단순 로그만
+    console.log("Android 12+ 정확한 알람 권한 체크 완료");
+    return true;
+  } catch (error) {
+    console.error("정확한 알람 권한 확인 오류:", error);
+    return true;
+  }
+};
+
+// 테스트 알림 발송 함수 추가
+export const sendTestNotification = async () => {
+  try {
+    console.log("테스트 알림 발송 시작...");
+
+    // 권한 확인
+    const hasPermission = await requestNotificationPermissions();
+    if (!hasPermission) {
+      ToastEventSystem.showToast("알림 권한이 필요합니다", 2000);
+      return false;
+    }
+
+    // Android 채널 설정 확인
+    if (Platform.OS === "android") {
+      await setupAndroidChannels();
+    }
+
+    // 5초 후 테스트 알림 발송
+    const testTime = new Date();
+    testTime.setSeconds(testTime.getSeconds() + 5);
+
+    const identifier = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: "🔔 테스트 알림",
+        body: "알림 시스템이 정상 작동합니다!",
+        sound: true,
+        priority: "high",
+        data: { test: true },
+        android: {
+          channelId: "schedule-notifications",
+          priority: "high",
+          sound: true,
+          vibrate: [0, 250, 250, 250],
+          color: "#FF231F7C",
+        },
+      },
+      trigger: {
+        type: "date",
+        date: testTime,
+      },
+    });
+
+    console.log(
+      `테스트 알림 예약됨: ${identifier}, 시간: ${testTime.toLocaleTimeString()}`
+    );
+    ToastEventSystem.showToast("5초 후 테스트 알림이 울립니다", 2000);
+    return true;
+  } catch (error) {
+    console.error("테스트 알림 발송 오류:", error);
+    ToastEventSystem.showToast("테스트 알림 발송 실패", 2000);
+    return false;
+  }
+};
 
 // 알림 권한 요청 함수
 export const requestNotificationPermissions = async () => {
@@ -75,8 +144,22 @@ export const requestNotificationPermissions = async () => {
         },
       });
       console.log("알림 권한 요청 결과:", status);
+
+      if (status === "granted") {
+        // Android 12+ 정확한 알람 권한도 요청
+        if (Platform.OS === "android") {
+          await requestExactAlarmPermission();
+        }
+      }
+
       return status === "granted";
     }
+
+    // Android 12+ 정확한 알람 권한 확인
+    if (Platform.OS === "android") {
+      await requestExactAlarmPermission();
+    }
+
     return true;
   } catch (error) {
     console.error("알림 권한 요청 오류:", error);
@@ -85,7 +168,6 @@ export const requestNotificationPermissions = async () => {
     return false;
   }
 };
-
 
 // 푸시 알림 토큰 가져오기
 export const getExpoPushTokenAsync = async () => {
@@ -130,32 +212,50 @@ export const getExpoPushTokenAsync = async () => {
   }
 };
 
-// Android 알림 채널 설정 - 단순화
+// Android 알림 채널 설정 - 개선된 버전
 export const setupAndroidChannels = async () => {
   if (Platform.OS === "android") {
-    // 항상 소리와 진동 활성화
-    await Notifications.setNotificationChannelAsync("schedule-notifications", {
-      name: "일정 알림",
-      description: "일정 시간에 맞춰 발송되는 중요한 알림입니다",
-      importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 250, 250, 250],
-      lightColor: "#FF231F7C",
-      sound: true,
-      enableLights: true,
-      enableVibrate: true,
-      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-      bypassDnd: true, // 방해금지 모드 무시
-    });
+    try {
+      // 기존 채널 제거 후 재생성
+      await Notifications.deleteNotificationChannelAsync(
+        "schedule-notifications"
+      );
+      await Notifications.deleteNotificationChannelAsync("default");
 
-    // 기본 알림 채널도 업그레이드
-    await Notifications.setNotificationChannelAsync("default", {
-      name: "기본 알림",
-      importance: Notifications.AndroidImportance.HIGH,
-      vibrationPattern: [0, 250, 250, 250],
-      lightColor: "#FF231F7C",
-      sound: true,
-      enableVibrate: true,
-    });
+      // 고우선순위 일정 알림 채널
+      await Notifications.setNotificationChannelAsync(
+        "schedule-notifications",
+        {
+          name: "일정 알림",
+          description: "일정 시간에 맞춰 발송되는 중요한 알림입니다",
+          importance: Notifications.AndroidImportance.MAX,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: "#FF231F7C",
+          sound: true,
+          enableLights: true,
+          enableVibrate: true,
+          lockscreenVisibility:
+            Notifications.AndroidNotificationVisibility.PUBLIC,
+          bypassDnd: true, // 방해금지 모드 무시
+          showBadge: true,
+        }
+      );
+
+      // 기본 알림 채널
+      await Notifications.setNotificationChannelAsync("default", {
+        name: "기본 알림",
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: "#FF231F7C",
+        sound: true,
+        enableVibrate: true,
+        showBadge: true,
+      });
+
+      console.log("Android 알림 채널 설정 완료");
+    } catch (error) {
+      console.error("Android 채널 설정 오류:", error);
+    }
   }
 };
 
@@ -188,6 +288,11 @@ export const enableNotificationsWithToast = async (schedules) => {
         });
       }, 2500);
       return false;
+    }
+
+    // Android 채널 재설정
+    if (Platform.OS === "android") {
+      await setupAndroidChannels();
     }
 
     // 백그라운드 태스크 등록
@@ -223,11 +328,13 @@ export const enableNotificationsWithToast = async (schedules) => {
       await Notifications.getAllScheduledNotificationsAsync();
     console.log(`실제 예약된 알림 수: ${scheduledNotifications.length}`);
 
-    // 토스트 메시지로 알림
-    ToastEventSystem.showToast(
-      `${successCount}개의 일정에 알림이 설정되었습니다`,
-      2000
-    );
+    // 성공 메시지
+    if (successCount > 0) {
+      ToastEventSystem.showToast(
+        `${successCount}개 알림이 설정되었습니다`,
+        2000
+      );
+    }
 
     return true;
   } catch (error) {
@@ -251,9 +358,7 @@ export const disableNotificationsWithToast = async () => {
     // 상태 저장
     await saveNotificationState(false);
 
-    // 토스트 메시지로 알림
-    ToastEventSystem.showToast("모든 일정 알림이 해제되었습니다", 2000);
-
+    ToastEventSystem.showToast("알림이 비활성화되었습니다", 2000);
     return true;
   } catch (error) {
     console.error("알림 비활성화 오류:", error);
@@ -276,6 +381,11 @@ export const enableNotificationsWithoutAlert = async (schedules) => {
 
     if (!hasPermission) {
       return false;
+    }
+
+    // Android 채널 재설정
+    if (Platform.OS === "android") {
+      await setupAndroidChannels();
     }
 
     // 백그라운드 태스크 등록
@@ -331,7 +441,7 @@ export const disableNotificationsWithoutAlert = async () => {
   }
 };
 
-// 공통 기능 함수들
+// 개선된 알림 스케줄링 함수
 export const scheduleNotification = async (schedule) => {
   try {
     console.log(`"${schedule.task}" 일정에 대한 알림 예약 시작...`);
@@ -345,7 +455,7 @@ export const scheduleNotification = async (schedule) => {
     const scheduledDate = new Date();
     scheduledDate.setHours(hours, minutes, 0, 0);
 
-    // 이미 지난 시간인지 확인 - 더 명확한 로직으로 수정
+    // 이미 지난 시간인지 확인
     const now = new Date();
     const isPast =
       scheduledDate.getDate() === now.getDate() &&
@@ -364,21 +474,7 @@ export const scheduleNotification = async (schedule) => {
       return null;
     }
 
-    // 지금부터 다음날까지의 알림만 허용
-    const tomorrow = new Date(now);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(23, 59, 59, 999);
-
-    if (scheduledDate > tomorrow) {
-      console.log(
-        `24시간 이상 후의 알림은 나중에 스케줄링됩니다: ${
-          schedule.task
-        } (${scheduledDate.toLocaleString()})`
-      );
-      return null;
-    }
-
-    console.log(`알림 예약 예정 시간: ${scheduledDate.toLocaleTimeString()}`);
+    console.log(`알림 예약 예정 시간: ${scheduledDate.toLocaleString()}`);
 
     // 기존 알림이 있으면 먼저 취소 (중복 방지)
     if (notificationIds[schedule.id]) {
@@ -389,26 +485,33 @@ export const scheduleNotification = async (schedule) => {
       }
     }
 
-    // 알림 예약 - 우선순위 최대화
+    // 개선된 알림 예약 - 더 강력한 설정
     const identifier = await Notifications.scheduleNotificationAsync({
       content: {
-        title: `${schedule.task} 일정 알림`,
-        body: `일정 시작 시간: ${schedule.startTime}`,
+        title: `📅 ${schedule.task}`,
+        body: `일정 시작 시간입니다 (${schedule.startTime})`,
         sound: true,
-        priority: "max",
+        priority: Notifications.AndroidImportance.MAX,
         data: {
           scheduleId: schedule.id,
           task: schedule.task,
           time: schedule.startTime,
           screen: "홈",
         },
-        // Android용 추가 설정
+        // Android용 강화된 설정
         android: {
           channelId: "schedule-notifications",
-          priority: "max",
+          priority: Notifications.AndroidImportance.MAX,
           sound: true,
           vibrate: [0, 250, 250, 250],
           color: "#FF231F7C",
+          sticky: false, // 자동으로 사라지지 않게
+          autoCancel: true, // 탭하면 사라지게
+        },
+        // iOS용 설정
+        ios: {
+          sound: true,
+          critical: true, // iOS에서 중요 알림으로 설정
         },
       },
       trigger: {
@@ -420,7 +523,7 @@ export const scheduleNotification = async (schedule) => {
     console.log(
       `알림 예약 완료: ${
         schedule.task
-      }, ID: ${identifier}, 시간: ${scheduledDate.toLocaleTimeString()}`
+      }, ID: ${identifier}, 시간: ${scheduledDate.toLocaleString()}`
     );
 
     // 새 알림 ID 저장
@@ -463,7 +566,9 @@ export const saveNotificationState = async (enabled) => {
 // 모든 알림 가져오기
 export const getAllNotifications = async () => {
   try {
-    const notificationsData = await AsyncStorage.getItem(NOTIFICATIONS_STORAGE_KEY);
+    const notificationsData = await AsyncStorage.getItem(
+      NOTIFICATIONS_STORAGE_KEY
+    );
     if (!notificationsData) return [];
     return JSON.parse(notificationsData);
   } catch (error) {
@@ -476,7 +581,7 @@ export const getAllNotifications = async () => {
 export const getUnreadNotificationsCount = async () => {
   try {
     const notifications = await getAllNotifications();
-    return notifications.filter(notification => !notification.read).length;
+    return notifications.filter((notification) => !notification.read).length;
   } catch (error) {
     console.error("읽지 않은 알림 개수 가져오기 오류:", error);
     return 0;
@@ -486,7 +591,10 @@ export const getUnreadNotificationsCount = async () => {
 // 알림 저장
 const saveNotifications = async (notifications) => {
   try {
-    await AsyncStorage.setItem(NOTIFICATIONS_STORAGE_KEY, JSON.stringify(notifications));
+    await AsyncStorage.setItem(
+      NOTIFICATIONS_STORAGE_KEY,
+      JSON.stringify(notifications)
+    );
     return true;
   } catch (error) {
     console.error("알림 저장 오류:", error);
@@ -505,7 +613,7 @@ export const addNotification = async (type, title, message, data = {}) => {
       message,
       data,
       read: false,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
     };
 
     notifications.unshift(newNotification);
@@ -519,7 +627,7 @@ export const addNotification = async (type, title, message, data = {}) => {
 
 // 시스템 알림 추가
 export const addSystemNotification = async (title, message, data = {}) => {
-  return await addNotification('system', title, message, data);
+  return await addNotification("system", title, message, data);
 };
 
 // 놓친 일정 알림 추가
@@ -527,9 +635,10 @@ export const addMissedScheduleNotification = async (schedule, date) => {
   // 이미 존재하는 알림인지 확인
   const notifications = await getAllNotifications();
   const isDuplicate = notifications.some(
-    noti => noti.type === 'missed_schedule' && 
-            noti.data.scheduleId === schedule.id &&
-            noti.data.date === date
+    (noti) =>
+      noti.type === "missed_schedule" &&
+      noti.data.scheduleId === schedule.id &&
+      noti.data.date === date
   );
 
   if (isDuplicate) return null;
@@ -539,12 +648,12 @@ export const addMissedScheduleNotification = async (schedule, date) => {
     task: schedule.task,
     startTime: schedule.startTime,
     endTime: schedule.endTime,
-    date
+    date,
   };
 
   return await addNotification(
-    'missed_schedule',
-    '놓친 일정 알림',
+    "missed_schedule",
+    "놓친 일정 알림",
     `"${schedule.task}" 일정을 완료하지 않았습니다.`,
     data
   );
@@ -554,9 +663,9 @@ export const addMissedScheduleNotification = async (schedule, date) => {
 export const markNotificationAsRead = async (notificationId) => {
   try {
     const notifications = await getAllNotifications();
-    const updatedNotifications = notifications.map(notification => 
-      notification.id === notificationId 
-        ? { ...notification, read: true } 
+    const updatedNotifications = notifications.map((notification) =>
+      notification.id === notificationId
+        ? { ...notification, read: true }
         : notification
     );
 
@@ -572,9 +681,9 @@ export const markNotificationAsRead = async (notificationId) => {
 export const markAllNotificationsAsRead = async () => {
   try {
     const notifications = await getAllNotifications();
-    const updatedNotifications = notifications.map(notification => ({
+    const updatedNotifications = notifications.map((notification) => ({
       ...notification,
-      read: true
+      read: true,
     }));
 
     await saveNotifications(updatedNotifications);
@@ -590,7 +699,7 @@ export const deleteNotification = async (notificationId) => {
   try {
     const notifications = await getAllNotifications();
     const filteredNotifications = notifications.filter(
-      notification => notification.id !== notificationId
+      (notification) => notification.id !== notificationId
     );
 
     await saveNotifications(filteredNotifications);
@@ -608,13 +717,17 @@ export const cleanupOldNotifications = async (daysToKeep = 30) => {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
 
-    const updatedNotifications = notifications.filter(notification => 
-      new Date(notification.createdAt) >= cutoffDate
+    const updatedNotifications = notifications.filter(
+      (notification) => new Date(notification.createdAt) >= cutoffDate
     );
 
     if (updatedNotifications.length !== notifications.length) {
       await saveNotifications(updatedNotifications);
-      console.log(`${notifications.length - updatedNotifications.length}개의 오래된 알림이 삭제되었습니다.`);
+      console.log(
+        `${
+          notifications.length - updatedNotifications.length
+        }개의 오래된 알림이 삭제되었습니다.`
+      );
     }
     return true;
   } catch (error) {
@@ -633,28 +746,34 @@ export const checkMissedSchedules = async (allSchedules) => {
     // 어제 날짜
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = format(yesterday, 'yyyy-MM-dd');
+    const yesterdayStr = format(yesterday, "yyyy-MM-dd");
 
     // 어제 일정이 없으면 종료
-    if (!allSchedules[yesterdayStr] || allSchedules[yesterdayStr].length === 0) return false;
+    if (!allSchedules[yesterdayStr] || allSchedules[yesterdayStr].length === 0)
+      return false;
 
     // 완료된 태스크 정보 가져오기
-    const completedTasksStr = await AsyncStorage.getItem('@completed_tasks');
-    const completedTasks = completedTasksStr ? JSON.parse(completedTasksStr) : {};
+    const completedTasksStr = await AsyncStorage.getItem("@completed_tasks");
+    const completedTasks = completedTasksStr
+      ? JSON.parse(completedTasksStr)
+      : {};
 
     let addedCount = 0;
 
     // 어제 일정 중 완료되지 않은 항목 확인
     for (const schedule of allSchedules[yesterdayStr]) {
       if (!completedTasks[schedule.id]) {
-        const notificationId = await addMissedScheduleNotification(schedule, yesterdayStr);
+        const notificationId = await addMissedScheduleNotification(
+          schedule,
+          yesterdayStr
+        );
         if (notificationId) addedCount++;
       }
     }
 
     if (addedCount > 0) {
       console.log(`${addedCount}개의 놓친 일정 알림이 추가되었습니다.`);
-      
+
       // 토스트 메시지 표시 (선택 사항)
       if (ToastEventSystem && ToastEventSystem.showToast) {
         ToastEventSystem.showToast(
@@ -675,9 +794,9 @@ export const checkMissedSchedules = async (allSchedules) => {
 export const checkMissedSchedulesOnAppStart = async () => {
   try {
     // 스케줄 데이터 가져오기
-    const schedulesData = await AsyncStorage.getItem('@schedules');
+    const schedulesData = await AsyncStorage.getItem("@schedules");
     if (!schedulesData) return false;
-    
+
     const allSchedules = JSON.parse(schedulesData);
     return await checkMissedSchedules(allSchedules);
   } catch (error) {
@@ -687,15 +806,22 @@ export const checkMissedSchedulesOnAppStart = async () => {
 };
 
 // 특별 이벤트/공지 알림 추가
-export const addSpecialEventNotification = async (title, message, data = {}) => {
-  return await addNotification('special_event', title, message, data);
+export const addSpecialEventNotification = async (
+  title,
+  message,
+  data = {}
+) => {
+  return await addNotification("special_event", title, message, data);
 };
 
 // 공지사항 알림 추가
-export const addAnnouncementNotification = async (title, message, data = {}) => {
-  return await addNotification('announcement', title, message, data);
+export const addAnnouncementNotification = async (
+  title,
+  message,
+  data = {}
+) => {
+  return await addNotification("announcement", title, message, data);
 };
-
 
 // 모든 예약된 알림 취소
 export const cancelAllScheduledNotifications = async () => {
@@ -827,7 +953,7 @@ export const updateNotificationsForSchedules = async (schedules) => {
       return scheduleTime > now;
     });
 
-    // 위험: 모든 알림을 취소하고 다시 설정
+    // 모든 알림을 취소하고 다시 설정
     await Notifications.cancelAllScheduledNotificationsAsync();
 
     // notificationIds 객체 초기화

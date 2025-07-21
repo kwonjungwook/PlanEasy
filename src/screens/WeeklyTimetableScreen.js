@@ -1,36 +1,33 @@
 // src/screens/WeeklyTimetableScreen.js
 
-import React, {
-  useState,
-  useEffect,
-  useRef,
-  useCallback,
-  useMemo,
-} from "react";
+import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { addDays, format, getDate, startOfWeek } from "date-fns";
+import { ko } from "date-fns/locale";
+import { StatusBar } from "expo-status-bar";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Dimensions,
-  Modal,
   Alert,
   Animated,
+  Dimensions,
+  Modal,
+  Platform,
+  StatusBar as RNStatusBar,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
-import { usePlanner } from "../context/PlannerContext";
-import MainLayout from "../components/layout/MainLayout";
-import { Ionicons } from "@expo/vector-icons";
-import { format, startOfWeek, addDays, getDate } from "date-fns";
-import { ko } from "date-fns/locale";
-import { useProgress } from "../context/ProgressContext";
 import {
+  GestureHandlerRootView,
   PinchGestureHandler,
   State,
-  GestureHandlerRootView,
 } from "react-native-gesture-handler";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import HeaderBar from "../components/layout/HeaderBar";
+import MainLayout from "../components/layout/MainLayout";
+import { usePlanner } from "../context/PlannerContext";
+import { useProgress } from "../context/ProgressContext";
 import { useSubscription } from "../context/SubscriptionContext";
 
 // 상수 정의
@@ -499,19 +496,21 @@ const WeeklyTimetableScreen = ({ navigation }) => {
     }
   };
 
-  // 색상이 해금되었는지 확인하는 함수 개선
-  const isColorUnlocked = useCallback(
-    (colorIndex) => {
-      const colorInfo = unlockedColors[colorIndex];
+  // 색상 해제 여부 확인 함수
+  const isColorUnlocked = useCallback((colorIndex) => {
+    // 모든 색상이 무료로 제공됨
+    return true;
+  }, []);
 
-      // 색상 정보가 없으면 해금되지 않음
-      if (!colorInfo) return false;
-
-      // 구매했거나 구독 혜택으로 사용 가능하면 해금됨
-      return colorInfo.purchased || colorInfo.subscriptionBenefit || false;
-    },
-    [unlockedColors]
-  );
+  // 색상 구매 함수
+  const handleColorPurchase = useCallback(async (colorIndex) => {
+    // 모든 색상이 무료로 제공되므로 구매 불필요
+    Alert.alert(
+      "알림",
+      "🎉 모든 색상이 무료로 제공됩니다! 자유롭게 사용하세요."
+    );
+    return;
+  }, []);
 
   // 색상 구매 함수 개선
   const purchaseColor = async (colorIndex) => {
@@ -1550,214 +1549,234 @@ const WeeklyTimetableScreen = ({ navigation }) => {
   }, [showZoomControls, scale, handleZoomIn, handleZoomOut, handleResetZoom]);
 
   return (
-    <MainLayout navigation={navigation}>
-      <View style={styles.header}>
-        <View style={styles.weekNavigator}>
-          <TouchableOpacity
-            onPress={() => changeWeek(-1)}
-            style={styles.weekArrowButton}
-          >
-            <Ionicons name="chevron-back" size={22} color="#50cebb" />
-          </TouchableOpacity>
+    <View style={{ flex: 1, backgroundColor: "#ffffff" }}>
+      <StatusBar style="dark" backgroundColor="#ffffff" translucent={false} />
 
-          <View style={styles.weekInfoContainer}>
-            <Text style={styles.weekTitle}>
-              {getWeekDisplayText(currentWeekStart)}
-            </Text>
+      <SafeAreaView
+        style={[
+          styles.container,
+          {
+            paddingTop:
+              Platform.OS === "android" ? RNStatusBar.currentHeight || 35 : 0,
+          },
+        ]}
+      >
+        <MainLayout navigation={navigation}>
+          <View style={styles.header}>
+            <View style={styles.weekNavigator}>
+              <TouchableOpacity
+                onPress={() => changeWeek(-1)}
+                style={styles.weekArrowButton}
+              >
+                <Ionicons name="chevron-back" size={22} color="#50cebb" />
+              </TouchableOpacity>
+
+              <View style={styles.weekInfoContainer}>
+                <Text style={styles.weekTitle}>
+                  {getWeekDisplayText(currentWeekStart)}
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                onPress={() => changeWeek(1)}
+                style={styles.weekArrowButton}
+              >
+                <Ionicons name="chevron-forward" size={22} color="#50cebb" />
+              </TouchableOpacity>
+            </View>
+
+            {/* 색상 변경 버튼 */}
+            <TouchableOpacity
+              onPress={toggleMultiSelectMode}
+              style={[
+                styles.colorButton,
+                isMultiSelectMode && styles.activeColorButton,
+              ]}
+            >
+              <Ionicons
+                name={
+                  isMultiSelectMode ? "color-palette" : "color-palette-outline"
+                }
+                size={20}
+                color={isMultiSelectMode ? "#fff" : "#50cebb"}
+              />
+            </TouchableOpacity>
           </View>
 
-          <TouchableOpacity
-            onPress={() => changeWeek(1)}
-            style={styles.weekArrowButton}
-          >
-            <Ionicons name="chevron-forward" size={22} color="#50cebb" />
-          </TouchableOpacity>
-        </View>
+          <GestureHandlerRootView style={{ flex: 1 }}>
+            <View style={styles.container}>
+              {/* 헤더 */}
 
-        {/* 색상 변경 버튼 */}
-        <TouchableOpacity
-          onPress={toggleMultiSelectMode}
-          style={[
-            styles.colorButton,
-            isMultiSelectMode && styles.activeColorButton,
-          ]}
-        >
-          <Ionicons
-            name={isMultiSelectMode ? "color-palette" : "color-palette-outline"}
-            size={20}
-            color={isMultiSelectMode ? "#fff" : "#50cebb"}
-          />
-        </TouchableOpacity>
-      </View>
+              {/* 멀티셀렉트 모드 안내 메시지 */}
+              {isMultiSelectMode && (
+                <View style={styles.multiSelectBanner}>
+                  <Text style={styles.multiSelectText}>
+                    {selectedSchedules.length > 0
+                      ? `${selectedSchedules.length}개 일정 선택됨 (색상 변경하려면 팔레트 버튼을 다시 눌러주세요)`
+                      : "일정을 선택하세요"}
+                  </Text>
+                </View>
+              )}
 
-      <GestureHandlerRootView style={{ flex: 1 }}>
-        <View style={styles.container}>
-          {/* 헤더 */}
+              {/* 확대/축소 컨트롤 */}
+              {renderZoomControls()}
+              {/* 색상 정보 배지 - 여기 추가 */}
+              {renderColorInfoBadge()}
 
-          {/* 멀티셀렉트 모드 안내 메시지 */}
-          {isMultiSelectMode && (
-            <View style={styles.multiSelectBanner}>
-              <Text style={styles.multiSelectText}>
-                {selectedSchedules.length > 0
-                  ? `${selectedSchedules.length}개 일정 선택됨 (색상 변경하려면 팔레트 버튼을 다시 눌러주세요)`
-                  : "일정을 선택하세요"}
-              </Text>
-            </View>
-          )}
+              {/* 시간표 뷰 - 헤더와 그리드 분리 */}
+              <View style={styles.timetableContainer}>
+                {/* 요일 헤더 - 확대/축소에서 제외 */}
+                <View style={styles.dayHeaderRow}>
+                  <View style={styles.timeHeaderCell}>
+                    <Text style={styles.timeLabel}>시간</Text>
+                  </View>
+                  {renderWeekDates()}
+                </View>
 
-          {/* 확대/축소 컨트롤 */}
-          {renderZoomControls()}
-          {/* 색상 정보 배지 - 여기 추가 */}
-          {renderColorInfoBadge()}
-
-          {/* 시간표 뷰 - 헤더와 그리드 분리 */}
-          <View style={styles.timetableContainer}>
-            {/* 요일 헤더 - 확대/축소에서 제외 */}
-            <View style={styles.dayHeaderRow}>
-              <View style={styles.timeHeaderCell}>
-                <Text style={styles.timeLabel}>시간</Text>
-              </View>
-              {renderWeekDates()}
-            </View>
-
-            {/* 시간표 그리드 - PinchGestureHandler 적용 */}
-            <PinchGestureHandler
-              onGestureEvent={onPinchGestureEvent}
-              onHandlerStateChange={onPinchHandlerStateChange}
-              minPointers={2}
-              maxPointers={2}
-            >
-              <Animated.View style={{ flex: 1 }}>
-                <ScrollView
-                  ref={scrollViewRef}
-                  style={styles.gridContainer}
-                  contentContainerStyle={{ paddingBottom: 120 }}
-                  onScroll={() => {
-                    // 사용자가 스크롤했음을 기록
-                    if (!userHasScrolled) {
-                      setUserHasScrolled(true);
-                    }
-                  }}
-                  scrollEventThrottle={200}
+                {/* 시간표 그리드 - PinchGestureHandler 적용 */}
+                <PinchGestureHandler
+                  onGestureEvent={onPinchGestureEvent}
+                  onHandlerStateChange={onPinchHandlerStateChange}
+                  minPointers={2}
+                  maxPointers={2}
                 >
-                  {HOURS.map((hour) => (
-                    <View
-                      key={hour}
-                      style={[styles.hourRow, { height: CELL_HEIGHT }]}
+                  <Animated.View style={{ flex: 1 }}>
+                    <ScrollView
+                      ref={scrollViewRef}
+                      style={styles.gridContainer}
+                      contentContainerStyle={{ paddingBottom: 120 }}
+                      onScroll={() => {
+                        // 사용자가 스크롤했음을 기록
+                        if (!userHasScrolled) {
+                          setUserHasScrolled(true);
+                        }
+                      }}
+                      scrollEventThrottle={200}
                     >
-                      {/* 시간 레이블 */}
-                      <View style={styles.timeCell}>
-                        <Text style={styles.hourLabel}>{hour}:00</Text>
-                      </View>
-
-                      {/* 요일별 셀 */}
-                      {DAYS.map((day) => (
+                      {HOURS.map((hour) => (
                         <View
-                          key={`${day}-${hour}`}
-                          style={[styles.dayCell, { width: dayColumnWidth }]}
+                          key={hour}
+                          style={[styles.hourRow, { height: CELL_HEIGHT }]}
                         >
-                          {/* 해당 시간, 요일에 일정이 있으면 표시 */}
-                          {findSchedulesByDayAndHourWithColor(day, hour).map(
-                            (schedule, index) => {
-                              const startHour = parseInt(
-                                schedule.startTime.split(":")[0]
-                              );
-                              if (startHour !== hour) return null;
+                          {/* 시간 레이블 */}
+                          <View style={styles.timeCell}>
+                            <Text style={styles.hourLabel}>{hour}:00</Text>
+                          </View>
 
-                              const startMinute = parseInt(
-                                schedule.startTime.split(":")[1]
-                              );
-                              const endHour = parseInt(
-                                schedule.endTime.split(":")[0]
-                              );
-                              const endMinute = parseInt(
-                                schedule.endTime.split(":")[1]
-                              );
+                          {/* 요일별 셀 */}
+                          {DAYS.map((day) => (
+                            <View
+                              key={`${day}-${hour}`}
+                              style={[
+                                styles.dayCell,
+                                { width: dayColumnWidth },
+                              ]}
+                            >
+                              {/* 해당 시간, 요일에 일정이 있으면 표시 */}
+                              {findSchedulesByDayAndHourWithColor(
+                                day,
+                                hour
+                              ).map((schedule, index) => {
+                                const startHour = parseInt(
+                                  schedule.startTime.split(":")[0]
+                                );
+                                if (startHour !== hour) return null;
 
-                              const durationHours =
-                                endHour -
-                                startHour +
-                                (endMinute - startMinute) / 60;
-                              const height =
-                                durationHours * (BASE_CELL_HEIGHT * scale);
-
-                              // 멀티셀렉트 모드에서 선택된 일정인지 확인
-                              const isSelected =
-                                isMultiSelectMode &&
-                                selectedSchedules.some(
-                                  (s) => s.id === schedule.id
+                                const startMinute = parseInt(
+                                  schedule.startTime.split(":")[1]
+                                );
+                                const endHour = parseInt(
+                                  schedule.endTime.split(":")[0]
+                                );
+                                const endMinute = parseInt(
+                                  schedule.endTime.split(":")[1]
                                 );
 
-                              return (
-                                <TouchableOpacity
-                                  key={`${schedule.id}-${index}`}
-                                  style={[
-                                    styles.scheduleItem,
-                                    {
-                                      position: "absolute",
-                                      top:
-                                        (startMinute / 60) *
-                                        (BASE_CELL_HEIGHT * scale),
-                                      height:
-                                        height > 0
-                                          ? height
-                                          : (BASE_CELL_HEIGHT * scale) / 4,
-                                      left: 1,
-                                      right: 1,
-                                      backgroundColor:
-                                        schedule.color || getRandomColor(),
-                                    },
-                                    isSelected && styles.selectedScheduleItem,
-                                  ]}
-                                  onPress={() =>
-                                    handleSchedulePress(schedule, day)
-                                  }
-                                >
-                                  <Text
-                                    style={styles.scheduleTitle}
-                                    numberOfLines={1}
+                                const durationHours =
+                                  endHour -
+                                  startHour +
+                                  (endMinute - startMinute) / 60;
+                                const height =
+                                  durationHours * (BASE_CELL_HEIGHT * scale);
+
+                                // 멀티셀렉트 모드에서 선택된 일정인지 확인
+                                const isSelected =
+                                  isMultiSelectMode &&
+                                  selectedSchedules.some(
+                                    (s) => s.id === schedule.id
+                                  );
+
+                                return (
+                                  <TouchableOpacity
+                                    key={`${schedule.id}-${index}`}
+                                    style={[
+                                      styles.scheduleItem,
+                                      {
+                                        position: "absolute",
+                                        top:
+                                          (startMinute / 60) *
+                                          (BASE_CELL_HEIGHT * scale),
+                                        height:
+                                          height > 0
+                                            ? height
+                                            : (BASE_CELL_HEIGHT * scale) / 4,
+                                        left: 1,
+                                        right: 1,
+                                        backgroundColor:
+                                          schedule.color || getRandomColor(),
+                                      },
+                                      isSelected && styles.selectedScheduleItem,
+                                    ]}
+                                    onPress={() =>
+                                      handleSchedulePress(schedule, day)
+                                    }
                                   >
-                                    {schedule.task}
-                                  </Text>
-                                  <Text
-                                    style={styles.scheduleTime}
-                                    numberOfLines={1}
-                                  >
-                                    {schedule.startTime} - {schedule.endTime}
-                                  </Text>
-                                </TouchableOpacity>
-                              );
-                            }
-                          )}
+                                    <Text
+                                      style={styles.scheduleTitle}
+                                      numberOfLines={1}
+                                    >
+                                      {schedule.task}
+                                    </Text>
+                                    <Text
+                                      style={styles.scheduleTime}
+                                      numberOfLines={1}
+                                    >
+                                      {schedule.startTime} - {schedule.endTime}
+                                    </Text>
+                                  </TouchableOpacity>
+                                );
+                              })}
+                            </View>
+                          ))}
                         </View>
                       ))}
-                    </View>
-                  ))}
-                </ScrollView>
-              </Animated.View>
-            </PinchGestureHandler>
-          </View>
+                    </ScrollView>
+                  </Animated.View>
+                </PinchGestureHandler>
+              </View>
 
-          {/* 현재 시간으로 버튼 */}
-          <TouchableOpacity
-            style={styles.currentTimeButton}
-            onPress={() => {
-              scrollToCurrentTime(new Date().getHours(), true);
-              handleResetZoom();
-            }}
-          >
-            <Ionicons name="time-outline" size={22} color="white" />
-          </TouchableOpacity>
-          {/* 색상 관리 버튼 - 여기 추가 */}
-          {renderColorManagerButton()}
+              {/* 현재 시간으로 버튼 */}
+              <TouchableOpacity
+                style={styles.currentTimeButton}
+                onPress={() => {
+                  scrollToCurrentTime(new Date().getHours(), true);
+                  handleResetZoom();
+                }}
+              >
+                <Ionicons name="time-outline" size={22} color="white" />
+              </TouchableOpacity>
+              {/* 색상 관리 버튼 - 여기 추가 */}
+              {renderColorManagerButton()}
 
-          {/* 색상 선택 모달 */}
-          {renderColorPickerModal()}
-          {renderPurchaseModal()}
-          {renderColorStoreModal()}
-        </View>
-      </GestureHandlerRootView>
-    </MainLayout>
+              {/* 색상 선택 모달 */}
+              {renderColorPickerModal()}
+              {renderPurchaseModal()}
+              {renderColorStoreModal()}
+            </View>
+          </GestureHandlerRootView>
+        </MainLayout>
+      </SafeAreaView>
+    </View>
   );
 };
 
@@ -1991,7 +2010,7 @@ const styles = StyleSheet.create({
   ...moreStyles,
   container: {
     flex: 1,
-    backgroundColor: "#f8f8f8",
+    backgroundColor: "#ffffff",
   },
   header: {
     position: "relative", // 색상 버튼의 절대 위치 지정을 위해 relative 설정
